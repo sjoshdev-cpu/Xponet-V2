@@ -1,0 +1,29 @@
+{
+  "name": "Page",
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "icon": { "type": "string" },
+    "cover_url": { "type": "string" },
+    "content": { "type": "string" },
+    "org_id": { "type": "string" },
+    "parent_id": { "type": "string" },
+    "is_database": { "type": "boolean" },
+    "database_config": { "type": "string" },
+    "database_preset": { "type": "string", "enum": ["knowledge_base","project_tracker","meeting_notes","crm","bug_tracker","content_calendar","tasks","custom"] },
+    "is_shared": { "type": "boolean" },
+    "share_token": { "type": "string" },
+    "share_password": { "type": "string" },
+    "is_favorite": { "type": "boolean" },
+    "is_deleted": { "type": "boolean" },
+    "deleted_at": { "type": "string", "format": "date-time" },
+    "is_template": { "type": "boolean" },
+    "template_name": { "type": "string" },
+    "is_locked": { "type": "boolean" },
+    "is_full_width": { "type": "boolean" },
+    "font_style": { "type": "string", "enum": ["sans","serif","mono"], "default": "sans" },
+    "permissions": { "type": "array", "items": { "type": "object", "properties": { "email": { "type": "string" }, "role": { "type": "string", "enum": ["owner","editor","viewer"] } } } },
+    "last_visited_by": { "type": "array", "items": { "type": "object", "properties": { "email": { "type": "string" }, "timestamp": { "type": "string" } } } }
+  },
+  "required": ["title", "org_id"]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Notification",
+  "type": "object",
+  "properties": {
+    "recipient_email": { "type": "string" },
+    "type": { "type": "string", "enum": ["mention", "task_assigned", "page_shared", "comment_reply", "invited"] },
+    "title": { "type": "string" },
+    "body": { "type": "string" },
+    "page_id": { "type": "string" },
+    "org_id": { "type": "string" },
+    "is_read": { "type": "boolean", "default": false },
+    "sender_email": { "type": "string" },
+    "sender_name": { "type": "string" }
+  },
+  "required": ["recipient_email", "type", "title", "org_id"]
+}

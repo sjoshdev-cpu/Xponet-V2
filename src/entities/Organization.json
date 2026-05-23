@@ -1,0 +1,22 @@
+{
+  "name": "Organization",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "description": "Organization name" },
+    "icon": { "type": "string", "description": "Emoji icon for the org" },
+    "owner_email": { "type": "string", "description": "Email of the org creator" },
+    "members": {
+      "type": "array",
+      "description": "List of member objects with email and role",
+      "items": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string" },
+          "role": { "type": "string", "enum": ["admin", "member"] },
+          "full_name": { "type": "string" }
+        }
+      }
+    }
+  },
+  "required": ["name", "owner_email"]
+}

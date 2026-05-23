@@ -1,0 +1,16 @@
+{
+  "name": "Task",
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "status": { "type": "string", "enum": ["Backlog","To Do","In Progress","In Review","Done"], "default": "To Do" },
+    "priority": { "type": "string", "enum": ["Low","Medium","High","Urgent"], "default": "Medium" },
+    "assignee_email": { "type": "string" },
+    "assignee_name": { "type": "string" },
+    "due_date": { "type": "string", "format": "date" },
+    "effort": { "type": "string", "enum": ["XS","S","M","L","XL"] },
+    "org_id": { "type": "string" }
+  },
+  "required": ["title", "org_id"]
+}
