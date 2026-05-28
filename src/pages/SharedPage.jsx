@@ -5,7 +5,7 @@ import BlockRenderer from '@/components/editor/BlockRenderer';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Lock } from 'lucide-react';
+import { Lock, Eye, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function SharedPage() {
@@ -20,12 +20,22 @@ export default function SharedPage() {
   useEffect(() => {
     async function load() {
       const pages = await Page.filter({ share_token: token });
-      if (pages.length > 0) {
-        setPage(pages[0]);
-        if (!pages[0].share_password) setUnlocked(true);
-      } else {
-        setError('Page not found or link has expired');
+      if (pages.length === 0) {
+        setError('Page not found or this link is no longer active.');
+        setLoading(false);
+        return;
       }
+      const found = pages[0];
+
+      // Enforce expiry client-side
+      if (found.share_expires_at && new Date() > new Date(found.share_expires_at)) {
+        setError('This share link has expired.');
+        setLoading(false);
+        return;
+      }
+
+      setPage(found);
+      if (!found.share_password) setUnlocked(true);
       setLoading(false);
     }
     load();
@@ -51,8 +61,12 @@ export default function SharedPage() {
   if (error || !page) {
     return (
       <div className="flex flex-col items-center justify-center h-screen text-muted-foreground gap-3">
-        <p className="text-lg font-medium">Page not found</p>
-        <p className="text-sm">{error || 'This link may have expired.'}</p>
+        <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center mb-2">
+          <Clock className="h-7 w-7 text-muted-foreground" />
+        </div>
+        <p className="text-lg font-semibold text-foreground">Link unavailable</p>
+        <p className="text-sm text-center max-w-xs">{error || 'This link may have expired or been disabled.'}</p>
+        <a href="/" className="text-xs text-primary underline mt-2">Go to Xponet</a>
       </div>
     );
   }
@@ -75,8 +89,9 @@ export default function SharedPage() {
             onChange={e => setPasswordInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleUnlock()}
             className={passwordError ? 'border-destructive' : ''}
+            autoFocus
           />
-          {passwordError && <p className="text-xs text-destructive">Incorrect password</p>}
+          {passwordError && <p className="text-xs text-destructive">Incorrect password. Please try again.</p>}
           <Button onClick={handleUnlock} className="w-full">Unlock</Button>
         </div>
       </div>
@@ -90,15 +105,26 @@ export default function SharedPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top bar */}
-      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border/50 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{page.icon}</span>
-          <span className="font-semibold text-sm truncate max-w-[300px]">{page.title || 'Untitled'}</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Shared via</span>
-          <span className="font-bold text-foreground">Xponet</span>
+      {/* Share banner */}
+      <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border/50">
+        <div className="px-6 py-2.5 flex items-center justify-between max-w-[900px] mx-auto">
+          <div className="flex items-center gap-2 text-sm">
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">Shared page</span>
+            <span className="text-border">·</span>
+            <span className="font-medium truncate max-w-[220px]">{page.icon} {page.title || 'Untitled'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {page.share_expires_at && (
+              <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                Expires {format(new Date(page.share_expires_at), 'MMM d, yyyy')}
+              </span>
+            )}
+            <span className="text-xs text-muted-foreground hidden sm:block">
+              Powered by <span className="font-bold text-foreground">Xponet</span>
+            </span>
+          </div>
         </div>
       </div>
 

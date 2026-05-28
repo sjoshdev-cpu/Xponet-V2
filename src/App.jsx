@@ -6,6 +6,8 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
+import { PeekProvider } from '@/contexts/PeekContext';
+import PeekPanel from '@/components/page/PeekPanel';
 
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -21,11 +23,20 @@ import Settings from '@/pages/Settings';
 import Templates from '@/pages/Templates';
 import SharedPage from '@/pages/SharedPage';
 import Tasks from '@/pages/Tasks';
+import Databases from '@/pages/Databases';
+import DatabaseDetail from '@/pages/DatabaseDetail';
+import DocumentHub from '@/pages/DocumentHub';
+import Tickets from '@/pages/Tickets';
+import TicketDetail from '@/pages/TicketDetail';
+import CommandCenter from '@/pages/CommandCenter';
 
 const WorkspaceWrapper = () => {
   return (
     <WorkspaceProvider>
-      <WorkspaceLayout />
+      <PeekProvider>
+        <WorkspaceLayout />
+        <PeekPanel />
+      </PeekProvider>
     </WorkspaceProvider>
   );
 };
@@ -60,6 +71,13 @@ const AuthenticatedApp = () => {
           <Route path="/settings" element={<Settings />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/tasks" element={<Tasks />} />
+          <Route path="/tickets" element={<Tickets />} />
+          <Route path="/tickets/:ticketId" element={<TicketDetail />} />
+          <Route path="/command-center" element={<CommandCenter />} />
+          <Route path="/databases" element={<Databases />} />
+          <Route path="/database/:dbId" element={<DatabaseDetail />} />
+          <Route path="/document-hub" element={<DocumentHub />} />
+          <Route path="/document-hub/:databaseId" element={<DocumentHub />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

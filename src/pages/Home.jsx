@@ -1,8 +1,9 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Page } from '@/api/firestoreClient';
+import { Page, Database } from '@/api/firestoreClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { getPageRoute } from '@/lib/pageRouter';
 import { Plus, FileText, LayoutTemplate, BookOpen, Star, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -28,6 +29,13 @@ export default function Home() {
     queryKey: ['pages', currentOrg?.id],
     queryFn: () => Page.filter({ org_id: currentOrg?.id }),
     enabled: !!currentOrg?.id
+  });
+
+  const { data: databases = [] } = useQuery({
+    queryKey: ['databases', currentOrg?.id],
+    queryFn: () => Database.filter({ org_id: currentOrg?.id }),
+    enabled: !!currentOrg?.id,
+    staleTime: 5 * 60 * 1000,
   });
 
   const activePages = pages.filter(p => !p.is_deleted && !p.is_template);
@@ -71,24 +79,8 @@ export default function Home() {
           </div>
         </Link>
         <button onClick={async () => {
-          const db = await Page.create({
-            title: 'Knowledge Base', icon: '📚', org_id: currentOrg?.id,
-            is_database: true, is_shared: true, database_preset: 'knowledge_base',
-            database_config: JSON.stringify({
-              properties: [
-                { id: 'title', name: 'Title', type: 'title' },
-                { id: 'cat', name: 'Category', type: 'select', options: [{ value: 'Guide', color: 'blue' }, { value: 'Reference', color: 'green' }, { value: 'FAQ', color: 'yellow' }] },
-                { id: 'status', name: 'Status', type: 'select', options: [{ value: 'Draft', color: 'gray' }, { value: 'Published', color: 'green' }, { value: 'Archived', color: 'red' }] },
-                { id: 'tags', name: 'Tags', type: 'multi_select', options: [] },
-                { id: 'author', name: 'Author', type: 'person' }
-              ],
-              views: [{ id: 'table', name: 'All Articles', type: 'table' }],
-              rows: []
-            }),
-            content: JSON.stringify([])
-          });
-          queryClient.invalidateQueries({ queryKey: ['pages'] });
-          navigate(`/page/${db.id}`);
+          const hub = databases.find(db => db.name === 'Document Hub');
+          navigate(hub ? `/document-hub/${hub.id}` : '/document-hub');
         }} className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card hover:bg-accent/50 transition-colors text-left group">
           <div className="h-10 w-10 rounded-lg bg-chart-4/10 flex items-center justify-center group-hover:bg-chart-4/20 transition-colors">
             <BookOpen className="h-5 w-5 text-chart-4" />
@@ -107,7 +99,7 @@ export default function Home() {
           </h2>
           <div className="flex gap-3 overflow-x-auto pb-2">
             {favoritePages.map(page => (
-              <Link key={page.id} to={`/page/${page.id}`} className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors shrink-0">
+              <Link key={page.id} to={getPageRoute(page, databases)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors shrink-0">
                 <span>{page.icon || '📄'}</span>
                 <span className="text-sm font-medium">{page.title || 'Untitled'}</span>
               </Link>
@@ -122,7 +114,7 @@ export default function Home() {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {recentPages.map(page => (
-            <Link key={page.id} to={`/page/${page.id}`} className="group p-4 rounded-xl border border-border bg-card hover:bg-accent/30 hover:border-primary/20 transition-all">
+            <Link key={page.id} to={getPageRoute(page, databases)} className="group p-4 rounded-xl border border-border bg-card hover:bg-accent/30 hover:border-primary/20 transition-all">
               <div className="text-2xl mb-3">{page.icon || '📄'}</div>
               <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">{page.title || 'Untitled'}</p>
               <p className="text-xs text-muted-foreground mt-1">{format(safeDate(page.updated_date), 'MMM d, h:mm a')}</p>

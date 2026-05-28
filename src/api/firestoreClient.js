@@ -83,10 +83,30 @@ function makeEntity(collectionName) {
 
 export const Page         = makeEntity('pages');
 export const Task         = makeEntity('tasks');
+export const Ticket       = makeEntity('tickets');
 export const Comment      = makeEntity('comments');
 export const Notification = makeEntity('notifications');
 export const Organization = makeEntity('organizations');
+export const Database     = makeEntity('databases');
+export const DatabaseRecord = makeEntity('records');
+export const DatabaseView = makeEntity('db_views');
+
+/**
+ * withLastEditedBy(payload, user) — wraps any Page update payload with
+ * last_edited_by_email and last_edited_by_name so every write carries
+ * attribution without repeating the fields at each call site.
+ *
+ * Usage:
+ *   await Page.update(id, withLastEditedBy({ is_locked: true }, user));
+ */
+export function withLastEditedBy(payload, user) {
+  return {
+    ...payload,
+    last_edited_by_email: user?.email || '',
+    last_edited_by_name: user?.full_name || user?.email || '',
+  };
+}
 
 export default {
-  entities: { Page, Task, Comment, Notification, Organization },
+  entities: { Page, Task, Ticket, Comment, Notification, Organization, Database, DatabaseRecord, DatabaseView },
 };

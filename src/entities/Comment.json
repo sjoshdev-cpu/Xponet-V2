@@ -3,7 +3,8 @@
   "type": "object",
   "properties": {
     "page_id": { "type": "string", "description": "Page this comment belongs to" },
-    "content": { "type": "string", "description": "Comment text content" },
+    "block_id": { "type": "string", "description": "Block this comment is anchored to (optional)" },
+    "content": { "type": "string", "description": "Serialized comment content (v2 JSON with mention tokens, or legacy plain text)" },
     "parent_comment_id": { "type": "string", "description": "Parent comment ID for threads" },
     "org_id": { "type": "string" },
     "author_name": { "type": "string" },

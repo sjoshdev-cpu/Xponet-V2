@@ -1,23 +1,192 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ─── Helpers ────────────────────────────────────────────────────────────
+
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function myEmail() {
+      return request.auth.token.email;
+    }
+
+    // Check that the calling user is a member of an org (single Firestore get)
+    function isOrgMember(orgId) {
+      return isAuthed()
+          && myEmail() in get(/databases/$(database)/documents/organizations/$(orgId)).data.memberEmails;
+    }
+
+    // Page permission helpers that operate on a document data map
+    function pageHasNoPerms(data) {
+      return !('permissions' in data) || data.permissions.size() == 0;
+    }
+
+    function isPageOwner(data) {
+      return data.permissions.hasAny([{ 'email': myEmail(), 'role': 'owner' }]);
+    }
+
+    function isPageEditor(data) {
+      return data.permissions.hasAny([
+        { 'email': myEmail(), 'role': 'owner' },
+        { 'email': myEmail(), 'role': 'editor' }
+      ]);
+    }
+
+    // Prevent non-owners from modifying the permissions array
+    function notEscalatingPerms(existingData) {
+      return !('permissions' in request.resource.data)
+          || request.resource.data.permissions == existingData.permissions
+          || isPageOwner(existingData);
+    }
+
+    // Public shared page that hasn't expired
+    function isPubliclyShared(data) {
+      return data.is_shared == true
+          && (!('share_expires_at' in data)
+              || data.share_expires_at == null
+              || request.time < data.share_expires_at);
+    }
+
+    // Minimal structural validation
+    function hasString(data, field) {
+      return field in data && data[field] is string && data[field].size() > 0;
+    }
+
+    // ─── Organizations ───────────────────────────────────────────────────────
+
     match /organizations/{orgId} {
-      allow read, write: if request.auth != null
-        && request.auth.token.email in resource.data.memberEmails;
-      allow create: if request.auth != null;
+      // Only members may read their own org
+      allow read: if isAuthed()
+          && myEmail() in resource.data.memberEmails;
+
+      // Anyone authenticated can create an org (registration flow)
+      allow create: if isAuthed();
+
+      // Members may update; they cannot remove themselves from memberEmails
+      // to prevent accidental self-lock-out (but not a hard security requirement)
+      allow update: if isAuthed()
+          && myEmail() in resource.data.memberEmails
+          && myEmail() in request.resource.data.memberEmails;
+
+      // Orgs are never deleted from the client
+      allow delete: if false;
     }
+
+    // ─── Pages ──────────────────────────────────────────────────────────────
+
     match /pages/{pageId} {
-      allow read, write: if request.auth != null;
-      allow read: if resource.data.is_shared == true;
+      // Public share links (unauthenticated or authenticated)
+      allow read: if isPubliclyShared(resource.data);
+
+      // Org members may read pages belonging to their org
+      allow read: if isAuthed() && isOrgMember(resource.data.org_id);
+
+      // Create: must be org member; org_id must be supplied
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && isOrgMember(request.resource.data.org_id);
+
+      // Update: org member + is owner/editor (or no explicit perms) + cannot
+      //         escalate permissions beyond current role
+      allow update: if isAuthed()
+          && isOrgMember(resource.data.org_id)
+          && (pageHasNoPerms(resource.data) || isPageEditor(resource.data))
+          && notEscalatingPerms(resource.data);
+
+      // Delete (soft or hard): org member + owner (or no perms set)
+      allow delete: if isAuthed()
+          && isOrgMember(resource.data.org_id)
+          && (pageHasNoPerms(resource.data) || isPageOwner(resource.data));
     }
+
+    // ─── Tasks ──────────────────────────────────────────────────────────────
+
     match /tasks/{taskId} {
-      allow read, write: if request.auth != null;
+      allow read:   if isAuthed() && isOrgMember(resource.data.org_id);
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && hasString(request.resource.data, 'title')
+          && isOrgMember(request.resource.data.org_id);
+      allow update: if isAuthed() && isOrgMember(resource.data.org_id);
+      allow delete: if isAuthed() && isOrgMember(resource.data.org_id);
     }
+
+    // ─── Tickets ────────────────────────────────────────────────────────────
+
+    match /tickets/{ticketId} {
+      allow read:   if isAuthed() && isOrgMember(resource.data.org_id);
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && hasString(request.resource.data, 'title')
+          && isOrgMember(request.resource.data.org_id);
+      allow update: if isAuthed() && isOrgMember(resource.data.org_id);
+      allow delete: if isAuthed() && isOrgMember(resource.data.org_id);
+    }
+
+    // ─── Comments ───────────────────────────────────────────────────────────
+
     match /comments/{commentId} {
-      allow read, write: if request.auth != null;
+      allow read:   if isAuthed() && isOrgMember(resource.data.org_id);
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && isOrgMember(request.resource.data.org_id);
+      // Only the author may edit their own comment
+      allow update: if isAuthed()
+          && isOrgMember(resource.data.org_id)
+          && resource.data.author_email == myEmail();
+      allow delete: if isAuthed()
+          && isOrgMember(resource.data.org_id)
+          && resource.data.author_email == myEmail();
     }
+
+    // ─── Notifications ──────────────────────────────────────────────────────
+
     match /notifications/{notificationId} {
-      allow read, write: if request.auth != null;
+      // Only the recipient may read/update/delete their own notifications
+      allow read:   if isAuthed() && resource.data.recipient_email == myEmail();
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && isOrgMember(request.resource.data.org_id);
+      allow update: if isAuthed() && resource.data.recipient_email == myEmail();
+      allow delete: if isAuthed() && resource.data.recipient_email == myEmail();
+    }
+
+    // ─── Databases / Records / Views ────────────────────────────────────────
+
+    match /databases/{dbId} {
+      allow read:   if isAuthed() && isOrgMember(resource.data.org_id);
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && isOrgMember(request.resource.data.org_id);
+      allow update: if isAuthed() && isOrgMember(resource.data.org_id);
+      allow delete: if isAuthed() && isOrgMember(resource.data.org_id);
+    }
+
+    match /records/{recordId} {
+      allow read:   if isAuthed() && isOrgMember(resource.data.org_id);
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && isOrgMember(request.resource.data.org_id);
+      allow update: if isAuthed() && isOrgMember(resource.data.org_id);
+      allow delete: if isAuthed() && isOrgMember(resource.data.org_id);
+    }
+
+    match /db_views/{viewId} {
+      allow read:   if isAuthed() && isOrgMember(resource.data.org_id);
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && isOrgMember(request.resource.data.org_id);
+      allow update: if isAuthed() && isOrgMember(resource.data.org_id);
+      allow delete: if isAuthed() && isOrgMember(resource.data.org_id);
+    }
+
+    // ─── Presence (ephemeral) ───────────────────────────────────────────────
+
+    match /presence/{pageId}/viewers/{userId} {
+      allow read:  if isAuthed();
+      allow write: if isAuthed() && request.auth.uid == userId;
     }
   }
 }

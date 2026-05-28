@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { Organization, Page } from '@/api/firestoreClient';
+import { seedDocumentHub } from '@/api/seedDocumentHub';
 
 const WorkspaceContext = createContext(null);
 
@@ -16,7 +17,9 @@ export function WorkspaceProvider({ children }) {
   const [currentOrg, setCurrentOrg] = useState(null);
   const [orgs, setOrgs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  );
   const [theme, setThemeState] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('xponet-theme') || 'system';
@@ -109,6 +112,12 @@ export function WorkspaceProvider({ children }) {
     const savedOrgId = localStorage.getItem('xponet-org');
     const activeOrg = userOrgs.find(o => o.id === savedOrgId) || userOrgs[0];
     setCurrentOrg(activeOrg);
+
+    // Idempotently seed Document Hub for this org (no-op if already seeded)
+    if (activeOrg) {
+      await seedDocumentHub(activeOrg.id, firebaseUser.email);
+    }
+
     setLoading(false);
   }, [firebaseUser]);
 

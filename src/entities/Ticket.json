@@ -1,0 +1,30 @@
+{
+  "name": "Ticket",
+  "type": "object",
+  "properties": {
+    "title":             { "type": "string" },
+    "description":       { "type": "string" },
+    "status":            { "type": "string", "enum": ["Open","In Progress","Waiting on Client","Resolved","Closed"], "default": "Open" },
+    "severity":          { "type": "string", "enum": ["Low","Medium","High","Critical"], "default": "Medium" },
+    "sla_tier":          { "type": "string", "enum": ["Standard","Priority","Emergency"], "default": "Standard" },
+    "sla_due_at":        { "type": "string", "format": "date-time" },
+    "assigned_to":       { "type": "string", "description": "Assignee email" },
+    "assigned_to_name":  { "type": "string" },
+    "client_name":       { "type": "string" },
+    "escalated":         { "type": "boolean", "default": false },
+    "escalated_at":      { "type": "string", "format": "date-time" },
+    "escalated_to":      { "type": "string", "description": "Escalatee email" },
+    "escalated_to_name": { "type": "string" },
+    "escalation_reason": { "type": "string" },
+    "linked_sop_id":     { "type": "string" },
+    "linked_page_id":    { "type": "string" },
+    "linked_page_title": { "type": "string" },
+    "linked_tasks":      { "type": "array", "items": { "type": "string" }, "description": "Task IDs" },
+    "tags":              { "type": "array", "items": { "type": "string" } },
+    "activity":          { "type": "array", "description": "Activity log entries" },
+    "org_id":            { "type": "string" },
+    "created_by_email":  { "type": "string" },
+    "created_by_name":   { "type": "string" }
+  },
+  "required": ["title", "org_id"]
+}

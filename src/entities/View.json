@@ -1,0 +1,49 @@
+{
+  "name": "View",
+  "type": "object",
+  "properties": {
+    "database_id": { "type": "string", "description": "ID of the parent Database" },
+    "name":        { "type": "string" },
+    "type":        { "type": "string", "enum": ["table", "board", "gallery", "list", "calendar"], "default": "table" },
+    "filters": {
+      "type": "array",
+      "description": "Active filter conditions",
+      "items": {
+        "type": "object",
+        "properties": {
+          "propertyKey": { "type": "string" },
+          "op":          { "type": "string", "enum": ["eq", "neq", "contains", "not_contains", "is_empty", "is_not_empty"] },
+          "value":       {}
+        },
+        "required": ["propertyKey", "op"]
+      }
+    },
+    "sorts": {
+      "type": "array",
+      "description": "Sort order applied to records",
+      "items": {
+        "type": "object",
+        "properties": {
+          "propertyKey": { "type": "string" },
+          "direction":   { "type": "string", "enum": ["asc", "desc"] }
+        },
+        "required": ["propertyKey", "direction"]
+      }
+    },
+    "groupBy": {
+      "type": ["object", "null"],
+      "description": "Group records by a property (null = no grouping)",
+      "properties": {
+        "propertyKey": { "type": "string" }
+      }
+    },
+    "visibleColumns": {
+      "type": "array",
+      "description": "Ordered list of propertyKeys to show; omit = show all",
+      "items": { "type": "string" }
+    },
+    "order": { "type": "number", "description": "Display order among views of the same database", "default": 0 },
+    "org_id": { "type": "string" }
+  },
+  "required": ["database_id", "name", "org_id"]
+}

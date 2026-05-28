@@ -14,16 +14,34 @@
     "is_shared": { "type": "boolean" },
     "share_token": { "type": "string" },
     "share_password": { "type": "string" },
+    "share_expires_at": { "type": "string", "format": "date-time", "description": "ISO timestamp after which the public link stops working" },
     "is_favorite": { "type": "boolean" },
     "is_deleted": { "type": "boolean" },
     "deleted_at": { "type": "string", "format": "date-time" },
     "is_template": { "type": "boolean" },
     "template_name": { "type": "string" },
+    "template_category": { "type": "string", "description": "Category label for grouping templates, e.g. 'Work', 'Personal', 'Engineering'" },
+    "template_description": { "type": "string", "description": "Short description shown on the template card" },
+    "template_variables": { "type": "string", "description": "JSON array of variable names found in the content, e.g. [\"ClientName\",\"Date\"]" },
+    "template_use_count": { "type": "number", "description": "How many times this template has been used" },
     "is_locked": { "type": "boolean" },
     "is_full_width": { "type": "boolean" },
     "font_style": { "type": "string", "enum": ["sans","serif","mono"], "default": "sans" },
-    "permissions": { "type": "array", "items": { "type": "object", "properties": { "email": { "type": "string" }, "role": { "type": "string", "enum": ["owner","editor","viewer"] } } } },
-    "last_visited_by": { "type": "array", "items": { "type": "object", "properties": { "email": { "type": "string" }, "timestamp": { "type": "string" } } } }
+    "permissions": {
+      "type": "array",
+      "description": "Per-user role overrides. Org owners always have full access.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string" },
+          "role": { "type": "string", "enum": ["owner","editor","viewer"] }
+        }
+      }
+    },
+    "inherit_permissions": { "type": "boolean", "default": true, "description": "Inherit parent page permissions when no explicit entry exists" },
+    "last_edited_by_name": { "type": "string" },
+    "last_edited_by_email": { "type": "string" },
+    "search_text": { "type": "string", "description": "Plain-text block index for search" }
   },
   "required": ["title", "org_id"]
 }

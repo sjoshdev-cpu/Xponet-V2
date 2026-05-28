@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { UserPlus, Trash2, Sun, Moon, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import PageHeader from '@/components/layout/PageHeader';
 
 export default function Settings() {
   const { user, currentOrg, theme, setTheme, refreshOrgs } = useWorkspace();
@@ -57,8 +58,9 @@ export default function Settings() {
   const isAdmin = (currentOrg?.members || []).find(m => m.email === user?.email)?.role === 'admin' || currentOrg?.owner_email === user?.email;
 
   return (
-    <div className="max-w-[700px] mx-auto px-6 py-10">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+    <div className="flex flex-col h-full overflow-y-auto">
+      <PageHeader icon="⚙️" title="Settings" />
+      <div className="max-w-[700px] mx-auto px-6 py-8 w-full">
 
       <Tabs defaultValue="account">
         <TabsList className="mb-6">
@@ -195,6 +197,7 @@ export default function Settings() {
           </Card>
         </TabsContent>
       </Tabs>
+      </div>
     </div>
   );
 }

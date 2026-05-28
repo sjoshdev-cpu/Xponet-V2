@@ -10,7 +10,10 @@
     "assignee_name": { "type": "string" },
     "due_date": { "type": "string", "format": "date" },
     "effort": { "type": "string", "enum": ["XS","S","M","L","XL"] },
-    "org_id": { "type": "string" }
+    "org_id": { "type": "string" },
+    "page_id": { "type": "string" },
+    "page_title": { "type": "string" },
+    "page_icon": { "type": "string" }
   },
   "required": ["title", "org_id"]
 }
