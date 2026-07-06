@@ -41,7 +41,7 @@ export default function AddPropertyModal({ open, onClose, onAdd }) {
       id:      `c_${Date.now()}`,
       label:   label.trim(),
       type,
-      options: ['select', 'multiselect'].includes(type)
+      options: ['select', 'multiselect', 'status'].includes(type)
         ? options.split(',').map((s) => s.trim()).filter(Boolean)
         : undefined,
     });
@@ -76,7 +76,12 @@ export default function AddPropertyModal({ open, onClose, onAdd }) {
               {COL_TYPES.map(({ value, label: lbl, icon: Icon, color }) => (
                 <button
                   key={value}
-                  onClick={() => setType(value)}
+                  onClick={() => {
+                    setType(value);
+                    if (value === 'status' && !options.trim()) {
+                      setOptions('Not started, In progress, Done');
+                    }
+                  }}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-left transition-colors border ${
                     type === value
                       ? 'border-primary bg-primary/10 text-primary font-medium'
@@ -90,14 +95,14 @@ export default function AddPropertyModal({ open, onClose, onAdd }) {
             </div>
           </div>
 
-          {/* Options — shown only for select / multiselect */}
-          {['select', 'multiselect'].includes(type) && (
+          {/* Options — shown for select / multiselect / status */}
+          {['select', 'multiselect', 'status'].includes(type) && (
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                Options <span className="opacity-60">(comma-separated)</span>
+                {type === 'status' ? 'Statuses' : 'Options'} <span className="opacity-60">(comma-separated)</span>
               </label>
               <Input
-                placeholder="Option A, Option B, Option C"
+                placeholder={type === 'status' ? 'Not started, In progress, Done' : 'Option A, Option B, Option C'}
                 value={options}
                 onChange={(e) => setOptions(e.target.value)}
               />

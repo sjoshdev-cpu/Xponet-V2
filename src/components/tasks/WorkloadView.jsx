@@ -5,6 +5,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Settings } from 'lucide-react
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { getAssignees } from '@/lib/task-utils';
 
 /** Converts effort strings to numeric points for workload calculation. */
 const EFFORT_POINTS = { XS: 0.5, S: 1, M: 2, L: 3, XL: 5 };
@@ -42,14 +43,23 @@ export default function WorkloadView({ tasks, onOpenTask }) {
     saveCapacities(next);
   };
 
-  // Group by assignee_email (or __unassigned__)
+  // Group by each assignee (or __unassigned__) — a task with multiple
+  // assignees is counted once per person, since it's real work on their plate.
   const groupMap = {};
   tasks.forEach((t) => {
-    const key = t.assignee_email || '__unassigned__';
-    const name = t.assignee_name
-      || (t.assignee_email ? t.assignee_email.split('@')[0] : 'Unassigned');
-    if (!groupMap[key]) groupMap[key] = { email: key, name, tasks: [] };
-    groupMap[key].tasks.push(t);
+    const assignees = getAssignees(t);
+    if (assignees.length === 0) {
+      const key = '__unassigned__';
+      if (!groupMap[key]) groupMap[key] = { email: key, name: 'Unassigned', tasks: [] };
+      groupMap[key].tasks.push(t);
+      return;
+    }
+    assignees.forEach(({ email, name }) => {
+      const key = email || '__unassigned__';
+      const label = name || (email ? email.split('@')[0] : 'Unassigned');
+      if (!groupMap[key]) groupMap[key] = { email: key, name: label, tasks: [] };
+      groupMap[key].tasks.push(t);
+    });
   });
 
   const groups = Object.values(groupMap).sort((a, b) => {

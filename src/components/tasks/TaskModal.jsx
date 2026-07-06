@@ -5,13 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Trash2, Link as LinkIcon, X, Search } from 'lucide-react';
+import { Trash2, Link as LinkIcon, X, Search, Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Notification, Page } from '@/api/firestoreClient';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { parseNaturalDate, DATE_SHORTCUT_LABELS } from '@/utils/nlpDate';
 import { format } from 'date-fns';
+import { getAssignees, buildAssigneeFields, getInitials } from '@/lib/task-utils';
 
 const STATUSES = ['Backlog', 'To Do', 'In Progress', 'In Review', 'Done'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
@@ -35,8 +36,76 @@ function DateShortcuts({ onSelect }) {
   );
 }
 
+/** Multi-select assignee picker — avatar stack + popover checklist of org members */
+function AssigneePicker({ assignees, onChange, orgMembers }) {
+  const [open, setOpen] = useState(false);
+  const currentEmails = new Set(assignees.map((a) => a.email));
+
+  const toggleMember = (member) => {
+    const next = currentEmails.has(member.email)
+      ? assignees.filter((a) => a.email !== member.email)
+      : [...assignees, { email: member.email, name: member.name }];
+    onChange(next);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 w-full px-3 py-2 border border-input rounded-md text-sm hover:border-border-hover transition-colors min-h-9"
+        >
+          {assignees.length === 0 ? (
+            <span className="text-muted-foreground">Unassigned</span>
+          ) : (
+            <div className="flex -space-x-1.5">
+              {assignees.map((a, i) => (
+                <div key={a.email || i} title={a.name || a.email}
+                  className="w-6 h-6 rounded-full bg-primary/20 text-primary text-[10px] font-semibold flex items-center justify-center border-2 border-background">
+                  {getInitials(a)}
+                </div>
+              ))}
+            </div>
+          )}
+          <span className="flex-1 text-left truncate text-muted-foreground text-xs">
+            {assignees.length > 0 && (assignees.length === 1 ? assignees[0].name || assignees[0].email : `${assignees.length} assignees`)}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-1" align="start">
+        {!orgMembers?.length ? (
+          <p className="text-xs text-muted-foreground px-2 py-1.5">No members found.</p>
+        ) : (
+          <div className="space-y-0.5 max-h-56 overflow-y-auto">
+            {orgMembers.map((m) => {
+              const isSelected = currentEmails.has(m.email);
+              return (
+                <button key={m.email} type="button"
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-muted/60"
+                  onClick={() => toggleMember({ email: m.email, name: m.full_name || '' })}>
+                  <Check className={cn('w-3.5 h-3.5 shrink-0', isSelected ? 'text-primary' : 'opacity-0')} />
+                  <div className="w-6 h-6 rounded-full bg-primary/20 text-primary text-[10px] font-semibold flex items-center justify-center shrink-0">
+                    {getInitials({ name: m.full_name, email: m.email })}
+                  </div>
+                  <div className="flex flex-col items-start min-w-0">
+                    <span className="truncate text-xs font-medium leading-tight">{m.full_name || m.email}</span>
+                    {m.full_name && (
+                      <span className="truncate text-[10px] text-muted-foreground leading-tight">{m.email}</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function TaskModal({ task, onSave, onClose, onDelete, currentUser }) {
-  const [form, setForm] = useState({ ...task });
+  const [form, setForm] = useState({ ...task, assignees: getAssignees(task) });
   const [saving, setSaving] = useState(false);
   const [pageSearch, setPageSearch] = useState('');
   const [pagePickerOpen, setPagePickerOpen] = useState(false);
@@ -60,21 +129,26 @@ export default function TaskModal({ task, onSave, onClose, onDelete, currentUser
 
   const handleSave = async () => {
     setSaving(true);
-    const prevEmail = task.assignee_email;
-    const newEmail = form.assignee_email;
-    if (newEmail && newEmail !== prevEmail && newEmail !== currentUser?.email) {
-      Notification.create({
-        recipient_email: newEmail,
-        type: 'task_assigned',
-        title: `${currentUser?.full_name || currentUser?.email || 'Someone'} assigned you a task`,
-        body: form.title,
-        org_id: form.org_id,
-        sender_email: currentUser?.email,
-        sender_name: currentUser?.full_name,
-        is_read: false,
+    const prevAssignees = getAssignees(task);
+    const prevEmails = new Set(prevAssignees.map((a) => a.email));
+    const newlyAdded = (form.assignees || []).filter((a) => a.email && !prevEmails.has(a.email));
+
+    newlyAdded
+      .filter((a) => a.email !== currentUser?.email)
+      .forEach((a) => {
+        Notification.create({
+          recipient_email: a.email,
+          type: 'task_assigned',
+          title: `${currentUser?.full_name || currentUser?.email || 'Someone'} assigned you a task`,
+          body: form.title,
+          org_id: form.org_id,
+          sender_email: currentUser?.email,
+          sender_name: currentUser?.full_name,
+          is_read: false,
+        });
       });
-    }
-    await onSave(form);
+
+    await onSave({ ...form, ...buildAssigneeFields(form.assignees) });
     setSaving(false);
   };
 
@@ -164,24 +238,13 @@ export default function TaskModal({ task, onSave, onClose, onDelete, currentUser
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5">Assignee Name</Label>
-              <Input
-                value={form.assignee_name || ''}
-                onChange={(e) => set('assignee_name', e.target.value)}
-                placeholder="e.g. John Doe"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5">Assignee Email</Label>
-              <Input
-                value={form.assignee_email || ''}
-                onChange={(e) => set('assignee_email', e.target.value)}
-                placeholder="e.g. john@co.com"
-                type="email"
-              />
-            </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5">Assignees</Label>
+            <AssigneePicker
+              assignees={form.assignees || []}
+              onChange={(next) => set('assignees', next)}
+              orgMembers={currentOrg?.members}
+            />
           </div>
 
           {/* Linked Page */}

@@ -12,10 +12,19 @@
         "type": "object",
         "properties": {
           "email": { "type": "string" },
-          "role": { "type": "string", "enum": ["admin", "member"] },
+          "role": { "type": "string", "enum": ["admin", "supervisor", "member"] },
           "full_name": { "type": "string" }
         }
       }
+    },
+    "memberEmails": {
+      "type": "array",
+      "description": "Flat list of member emails, derived from members[]. Firestore security rules read this to check org membership — always keep in sync via lib/permissions.js buildMemberFields(), never write members[] directly.",
+      "items": { "type": "string" }
+    },
+    "memberRoles": {
+      "type": "object",
+      "description": "Map of email -> role, derived from members[]. Lets security rules check a specific user's role without array iteration (not supported in rules). Kept in sync via lib/permissions.js buildMemberFields()."
     }
   },
   "required": ["name", "owner_email"]

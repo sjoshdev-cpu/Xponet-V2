@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Plus, X, ClipboardList, Circle, CheckCircle2 } from 'lucide-react';
 import TaskModal from '@/components/tasks/TaskModal';
+import { getAssignees, getInitials } from '@/lib/task-utils';
 
 const STATUS_DOT = {
   Backlog: <Circle className="h-3 w-3 text-slate-400" />,
@@ -109,11 +110,25 @@ export default function LinkedTasksPanel({ pageId, pageTitle, onClose }) {
                 >
                   {task.title}
                 </span>
-                {task.assignee_name && (
-                  <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
-                    {task.assignee_name.charAt(0).toUpperCase()}
-                  </div>
-                )}
+                {(() => {
+                  const assignees = getAssignees(task);
+                  if (assignees.length === 0) return null;
+                  return (
+                    <div className="flex -space-x-1.5 shrink-0">
+                      {assignees.slice(0, 3).map((a, i) => (
+                        <div key={a.email || i} title={a.name || a.email}
+                          className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary border-2 border-card">
+                          {getInitials(a)}
+                        </div>
+                      ))}
+                      {assignees.length > 3 && (
+                        <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[8px] font-bold text-muted-foreground border-2 border-card">
+                          +{assignees.length - 3}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

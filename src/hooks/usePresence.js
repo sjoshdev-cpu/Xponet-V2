@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
+import { useEffect, useRef, useState } from 'react';
+import { db, auth } from '@/lib/firebase';
 import {
   doc,
+  collection,
   setDoc,
   deleteDoc,
-  collection,
   getDocs,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -13,41 +13,54 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 const TWO_MINUTES_MS = 2 * 60 * 1000;
 
 /**
- * usePresence(pageId)
+ * usePresence(entityType, entityId, status?)
  *
  * Writes the current user's presence to:
- *   presence/{pageId}/viewers/{uid}
+ *   presence/{orgId}/{entityType}/{entityId}/users/{uid}
  *
- * Polls every 30 seconds to refresh own doc + fetch other viewers.
- * Returns:
- *   viewers — [{ email, name, uid }] — other active viewers (seen < 2 min ago)
+ * Writes on mount, refreshes every 30 s, and deletes on unmount.
+ * Filters out stale entries (lastSeen > 2 min ago).
+ *
+ * @param {string} entityType  - e.g. 'page', 'ticket', 'database'
+ * @param {string} entityId    - the entity's Firestore ID
+ * @param {'viewing'|'editing'} [status='viewing']
+ * @returns {{ viewers: Array<{uid, displayName, photoURL, email, status}> }}
  */
-export function usePresence(pageId) {
-  const { user } = useWorkspace();
+export function usePresence(entityType, entityId, status = 'viewing') {
+  const { user, currentOrganization } = useWorkspace();
+  const orgId = currentOrganization?.id;
   const [viewers, setViewers] = useState([]);
 
-  useEffect(() => {
-    if (!pageId || !user?.uid) return;
+  // Always-current status ref so the interval can read the latest value.
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
 
-    const presenceRef = doc(db, 'presence', pageId, 'viewers', user.uid);
+  useEffect(() => {
+    if (!entityId || !entityType || !user?.uid || !orgId) return;
+
+    const presenceRef = doc(db, 'presence', orgId, entityType, entityId, 'users', user.uid);
+    const viewersCol  = collection(db, 'presence', orgId, entityType, entityId, 'users');
 
     const writePresence = () => {
+      const fbUser = auth.currentUser;
       setDoc(presenceRef, {
-        email: user.email,
-        name: user.full_name || user.email,
-        lastSeen: serverTimestamp(),
+        displayName: fbUser?.displayName || user.full_name || user.email || '',
+        photoURL:    fbUser?.photoURL    ?? null,
+        email:       user.email,
+        lastSeen:    serverTimestamp(),
+        status:      statusRef.current,
       }).catch(() => {});
     };
 
     const fetchViewers = async () => {
       try {
-        const snap = await getDocs(collection(db, 'presence', pageId, 'viewers'));
+        const snap = await getDocs(viewersCol);
         const cutoff = Date.now() - TWO_MINUTES_MS;
         const active = snap.docs
-          .map((d) => ({ uid: d.id, ...d.data() }))
-          .filter((v) => {
+          .map(d => ({ uid: d.id, ...d.data() }))
+          .filter(v => {
             const ts = v.lastSeen?.toDate?.()?.getTime?.() ?? 0;
-            return ts > cutoff && v.email !== user.email;
+            return ts > cutoff && v.uid !== user.uid;
           });
         setViewers(active);
       } catch (_) {}
@@ -65,7 +78,8 @@ export function usePresence(pageId) {
       clearInterval(interval);
       deleteDoc(presenceRef).catch(() => {});
     };
-  }, [pageId, user?.uid, user?.email, user?.full_name]);
+    // orgId and uid are stable for a session; entityType/entityId drive re-runs.
+  }, [entityType, entityId, user?.uid, orgId]);
 
   return { viewers };
 }

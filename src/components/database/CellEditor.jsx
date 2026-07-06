@@ -6,9 +6,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from '@/components/ui/popover';
-import { OPTION_COLOR_CLASSES } from './db-constants.js';
+import { OPTION_COLOR_CLASSES, OPTION_COLORS, OPTION_COLORS_HEX, COLOR_PALETTE, colorHex, getOptionBadgeClasses, getOptionBadgeStyle } from './db-constants.js';
+import { genId } from './db-utils.js';
 import { DatabaseRecord } from '@/api/firestoreClient.js';
-import { Check, X } from 'lucide-react';
+import { Check, X, Plus } from 'lucide-react';
 
 /**
  * Inline cell editor rendered inside the table or record modal.
@@ -16,7 +17,7 @@ import { Check, X } from 'lucide-react';
  *
  * For textarea variant (multiline), pass multiline={true}.
  */
-export default function CellEditor({ prop, value, onChange, multiline = false, allDatabases = [] }) {
+export default function CellEditor({ prop, value, onChange, multiline = false, allDatabases = [], onAddOption = null, onUpdateOption = null, onClose = null }) {
   if (!prop) return null;
 
   switch (prop.type) {
@@ -70,10 +71,10 @@ export default function CellEditor({ prop, value, onChange, multiline = false, a
 
     case 'select':
     case 'status':
-      return <SelectEditor prop={prop} value={value} onChange={onChange} />;
+      return <SelectEditor prop={prop} value={value} onChange={onChange} onAddOption={onAddOption} onUpdateOption={onUpdateOption} onClose={onClose} />;
 
     case 'multi_select':
-      return <MultiSelectEditor prop={prop} value={value} onChange={onChange} />;
+      return <MultiSelectEditor prop={prop} value={value} onChange={onChange} onAddOption={onAddOption} onUpdateOption={onUpdateOption} onClose={onClose} />;
 
     case 'person':
       return (
@@ -104,50 +105,213 @@ export default function CellEditor({ prop, value, onChange, multiline = false, a
   }
 }
 
-function SelectEditor({ prop, value, onChange }) {
+function SelectEditor({ prop, value, onChange, onAddOption, onUpdateOption, onClose }) {
   const [open, setOpen] = useState(false);
-  const selectedOpt = (prop.options ?? []).find(o => o.id === value);
+  const [search, setSearch] = useState('');
+  const [addingNew, setAddingNew] = useState(false);
+  const [newOptName, setNewOptName] = useState('');
+  const [openColorId, setOpenColorId] = useState(null);
+  const searchRef = useRef(null);
+
+  const options = prop.options ?? [];
+  const selectedOpt = options.find(o => o.id === value);
+  const filtered = search
+    ? options.filter(o => (o.name ?? o.label ?? '').toLowerCase().includes(search.toLowerCase()))
+    : options;
+
+  function closePopover() {
+    setOpen(false);
+    setSearch('');
+    setAddingNew(false);
+    setNewOptName('');
+  }
+
+  function handleSelect(optId) {
+    onChange(optId);
+    closePopover();
+    onClose?.();
+  }
+
+  function handleClear() {
+    onChange(null);
+    closePopover();
+    onClose?.();
+  }
+
+  function handleCreateOption() {
+    const name = newOptName.trim();
+    if (!name || !onAddOption) return;
+    const nextColor = OPTION_COLORS_HEX[options.length % OPTION_COLORS_HEX.length];
+    const newOpt = { id: genId(), name, color: nextColor };
+    onAddOption(newOpt);
+    onChange(newOpt.id);
+    closePopover();
+    onClose?.();
+  }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) { setSearch(''); setAddingNew(false); setNewOptName(''); }
+      }}
+    >
       <PopoverTrigger asChild>
-        <button className="w-full flex items-center gap-1 text-sm">
+        <button className="w-full flex items-center gap-1 text-sm h-full min-h-[1.5rem] text-left">
           {selectedOpt ? (
-            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${OPTION_COLOR_CLASSES[selectedOpt.color] ?? OPTION_COLOR_CLASSES.gray}`}>
-              {selectedOpt.label}
+            <span
+              className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${getOptionBadgeClasses(selectedOpt.color)}`}
+              style={getOptionBadgeStyle(selectedOpt.color)}
+            >
+              {selectedOpt.name ?? selectedOpt.label}
             </span>
           ) : (
             <span className="text-muted-foreground/50 text-sm">—</span>
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-48 p-1" align="start">
+      <PopoverContent
+        className="w-56 p-1.5"
+        align="start"
+        onOpenAutoFocus={e => { e.preventDefault(); searchRef.current?.focus(); }}
+      >
+        {/* Search */}
+        <div className="pb-1 mb-0.5">
+          <input
+            ref={searchRef}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search for an option..."
+            className="w-full h-7 px-2 text-xs rounded border border-input bg-background text-foreground outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+
+        {/* Clear */}
         <button
-          className="flex items-center gap-2 w-full px-2 py-1.5 rounded text-sm hover:bg-accent"
-          onClick={() => { onChange(null); setOpen(false); }}
+          className="flex items-center gap-2 w-full px-2 py-1.5 rounded text-xs text-muted-foreground hover:bg-accent"
+          onClick={handleClear}
         >
-          <X className="w-3 h-3 text-muted-foreground" /> None
+          <X className="w-3 h-3" /> None
         </button>
-        {(prop.options ?? []).map(opt => (
-          <button
-            key={opt.id}
-            className="flex items-center justify-between w-full px-2 py-1.5 rounded hover:bg-accent"
-            onClick={() => { onChange(opt.id); setOpen(false); }}
-          >
-            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${OPTION_COLOR_CLASSES[opt.color] ?? OPTION_COLOR_CLASSES.gray}`}>
-              {opt.label}
-            </span>
-            {value === opt.id && <Check className="w-3 h-3" />}
-          </button>
-        ))}
+
+        {/* Options list */}
+        <div className="max-h-48 overflow-y-auto">
+          {filtered.map(opt => {
+            const isSelected = value === opt.id;
+            return (
+              <div
+                key={opt.id}
+                className={`flex items-center w-full rounded hover:bg-accent text-sm ${isSelected ? 'bg-accent/60' : ''}`}
+              >
+                {/* Color dot — opens 12-swatch palette when onUpdateOption is wired */}
+                {onUpdateOption ? (
+                  <Popover
+                    open={openColorId === opt.id}
+                    onOpenChange={v => setOpenColorId(v ? opt.id : null)}
+                  >
+                    <PopoverTrigger asChild>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Change color for ${opt.name ?? opt.label}`}
+                        className="ml-2 w-3 h-3 rounded-full flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-ring hover:ring-offset-1 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+                        style={{ backgroundColor: colorHex(opt.color) }}
+                        onClick={e => e.stopPropagation()}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
+                      />
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-2.5" align="start" side="right">
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Color</p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {COLOR_PALETTE.map(c => (
+                          <button
+                            key={c.key}
+                            type="button"
+                            title={c.label}
+                            onClick={() => { onUpdateOption(opt.id, 'color', c.key); setOpenColorId(null); }}
+                            className={`w-5 h-5 rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 ${opt.color === c.key ? 'ring-2 ring-ring ring-offset-1' : ''}`}
+                            style={{ backgroundColor: c.hex }}
+                          />
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <span
+                    className="ml-2 w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: colorHex(opt.color) }}
+                  />
+                )}
+                {/* Label — clicking selects this option */}
+                <button
+                  className="flex-1 flex items-center justify-between px-2 py-1.5 min-w-0"
+                  onClick={() => handleSelect(opt.id)}
+                >
+                  <span className="truncate">{opt.name ?? opt.label}</span>
+                  {isSelected && <Check className="w-3 h-3 flex-shrink-0 text-primary ml-1" />}
+                </button>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p className="text-xs text-center text-muted-foreground py-2">
+              {search ? `No options match "${search}"` : 'No options defined'}
+            </p>
+          )}
+        </div>
+
+        {/* Add option */}
+        {onAddOption && (
+          <div className="border-t border-border mt-1 pt-1">
+            {addingNew ? (
+              <div className="flex items-center gap-1 px-1">
+                <input
+                  autoFocus
+                  value={newOptName}
+                  onChange={e => setNewOptName(e.target.value)}
+                  placeholder="Option name..."
+                  className="flex-1 h-7 px-2 text-xs rounded border border-input bg-background text-foreground outline-none focus:ring-1 focus:ring-ring"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleCreateOption(); }
+                    if (e.key === 'Escape') { setAddingNew(false); setNewOptName(''); }
+                  }}
+                />
+                <button
+                  className="shrink-0 px-2 py-1 text-xs text-primary hover:text-primary/80 font-medium"
+                  onClick={handleCreateOption}
+                >
+                  Add
+                </button>
+              </div>
+            ) : (
+              <button
+                className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => setAddingNew(true)}
+              >
+                <Plus className="w-3 h-3" /> Add option
+              </button>
+            )}
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
 }
 
-function MultiSelectEditor({ prop, value, onChange }) {
+function MultiSelectEditor({ prop, value, onChange, onAddOption, onUpdateOption }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [addingNew, setAddingNew] = useState(false);
+  const [newOptName, setNewOptName] = useState('');
+  const [openColorId, setOpenColorId] = useState(null);
+  const searchRef = useRef(null);
+
+  const options = prop.options ?? [];
   const selected = Array.isArray(value) ? value : [];
+  const filtered = search
+    ? options.filter(o => (o.name ?? o.label ?? '').toLowerCase().includes(search.toLowerCase()))
+    : options;
 
   function toggle(id) {
     if (selected.includes(id)) {
@@ -157,35 +321,162 @@ function MultiSelectEditor({ prop, value, onChange }) {
     }
   }
 
+  function handleCreateOption() {
+    const name = newOptName.trim();
+    if (!name || !onAddOption) return;
+    const nextColor = OPTION_COLORS_HEX[options.length % OPTION_COLORS_HEX.length];
+    const newOpt = { id: genId(), name, color: nextColor };
+    onAddOption(newOpt);
+    onChange([...selected, newOpt.id]);
+    setNewOptName('');
+    setAddingNew(false);
+    setSearch('');
+    // Keep popover open so user can add/toggle more options
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) { setSearch(''); setAddingNew(false); setNewOptName(''); }
+      }}
+    >
       <PopoverTrigger asChild>
-        <button className="w-full flex flex-wrap items-center gap-1 text-sm min-h-[1.75rem]">
-          {selected.length === 0 && <span className="text-muted-foreground/50 text-sm">—</span>}
-          {selected.map(id => {
-            const opt = (prop.options ?? []).find(o => o.id === id);
-            if (!opt) return null;
-            return (
-              <span key={id} className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${OPTION_COLOR_CLASSES[opt.color] ?? OPTION_COLOR_CLASSES.gray}`}>
-                {opt.label}
-              </span>
-            );
-          })}
+        <button className="w-full flex flex-wrap items-center gap-1 text-sm min-h-[1.5rem] text-left">
+          {selected.length === 0
+            ? <span className="text-muted-foreground/50">—</span>
+            : selected.map(id => {
+                const opt = options.find(o => o.id === id);
+                if (!opt) return null;
+                return (
+                  <span
+                    key={id}
+                    className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${getOptionBadgeClasses(opt.color)}`}
+                    style={getOptionBadgeStyle(opt.color)}
+                  >
+                    {opt.name ?? opt.label}
+                  </span>
+                );
+              })
+          }
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-48 p-1" align="start">
-        {(prop.options ?? []).map(opt => (
-          <button
-            key={opt.id}
-            className="flex items-center justify-between w-full px-2 py-1.5 rounded hover:bg-accent"
-            onClick={() => toggle(opt.id)}
-          >
-            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${OPTION_COLOR_CLASSES[opt.color] ?? OPTION_COLOR_CLASSES.gray}`}>
-              {opt.label}
-            </span>
-            {selected.includes(opt.id) && <Check className="w-3 h-3" />}
-          </button>
-        ))}
+      <PopoverContent
+        className="w-56 p-1.5"
+        align="start"
+        onOpenAutoFocus={e => { e.preventDefault(); searchRef.current?.focus(); }}
+      >
+        {/* Search */}
+        <div className="pb-1 mb-0.5">
+          <input
+            ref={searchRef}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search for an option..."
+            className="w-full h-7 px-2 text-xs rounded border border-input bg-background text-foreground outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+
+        {/* Options list */}
+        <div className="max-h-48 overflow-y-auto">
+          {filtered.map(opt => {
+            const isSelected = selected.includes(opt.id);
+            return (
+              <div
+                key={opt.id}
+                className={`flex items-center w-full rounded hover:bg-accent text-sm ${isSelected ? 'bg-accent/60' : ''}`}
+              >
+                {/* Color dot — opens 12-swatch palette when onUpdateOption is wired */}
+                {onUpdateOption ? (
+                  <Popover
+                    open={openColorId === opt.id}
+                    onOpenChange={v => setOpenColorId(v ? opt.id : null)}
+                  >
+                    <PopoverTrigger asChild>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Change color for ${opt.name ?? opt.label}`}
+                        className="ml-2 w-3 h-3 rounded-full flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-ring hover:ring-offset-1 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+                        style={{ backgroundColor: colorHex(opt.color) }}
+                        onClick={e => e.stopPropagation()}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
+                      />
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-2.5" align="start" side="right">
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Color</p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {COLOR_PALETTE.map(c => (
+                          <button
+                            key={c.key}
+                            type="button"
+                            title={c.label}
+                            onClick={() => { onUpdateOption(opt.id, 'color', c.key); setOpenColorId(null); }}
+                            className={`w-5 h-5 rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 ${opt.color === c.key ? 'ring-2 ring-ring ring-offset-1' : ''}`}
+                            style={{ backgroundColor: c.hex }}
+                          />
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <span
+                    className="ml-2 w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: colorHex(opt.color) }}
+                  />
+                )}
+                {/* Label — clicking toggles this option */}
+                <button
+                  className="flex-1 flex items-center justify-between px-2 py-1.5 min-w-0"
+                  onClick={() => toggle(opt.id)}
+                >
+                  <span className="truncate">{opt.name ?? opt.label}</span>
+                  {isSelected && <Check className="w-3 h-3 flex-shrink-0 text-primary ml-1" />}
+                </button>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p className="text-xs text-center text-muted-foreground py-2">
+              {search ? `No options match "${search}"` : 'No options defined'}
+            </p>
+          )}
+        </div>
+
+        {/* Add option */}
+        {onAddOption && (
+          <div className="border-t border-border mt-1 pt-1">
+            {addingNew ? (
+              <div className="flex items-center gap-1 px-1">
+                <input
+                  autoFocus
+                  value={newOptName}
+                  onChange={e => setNewOptName(e.target.value)}
+                  placeholder="Option name..."
+                  className="flex-1 h-7 px-2 text-xs rounded border border-input bg-background text-foreground outline-none focus:ring-1 focus:ring-ring"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleCreateOption(); }
+                    if (e.key === 'Escape') { setAddingNew(false); setNewOptName(''); }
+                  }}
+                />
+                <button
+                  className="shrink-0 px-2 py-1 text-xs text-primary hover:text-primary/80 font-medium"
+                  onClick={handleCreateOption}
+                >
+                  Add
+                </button>
+              </div>
+            ) : (
+              <button
+                className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => setAddingNew(true)}
+              >
+                <Plus className="w-3 h-3" /> Add option
+              </button>
+            )}
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

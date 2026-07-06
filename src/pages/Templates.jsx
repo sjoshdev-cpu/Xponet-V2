@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Page, withLastEditedBy } from '@/api/firestoreClient';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import BlockRenderer from '@/components/editor/BlockRenderer';
 import { cn } from '@/lib/utils';
 import {
   Search, Sparkles, User, LayoutTemplate, Trash2, Braces
@@ -233,43 +235,75 @@ const BUILTIN_TEMPLATES = [
 
 const ALL_BUILTIN_CATEGORIES = [...new Set(BUILTIN_TEMPLATES.map((t) => t.category))].sort();
 
-// ── Block preview renderer (text-only, no interactive editing) ─────────────
-function BlockPreview({ block }) {
-  const content = (block.content || '').replace(/<[^>]+>/g, '');
-  if (!content && block.type !== 'divider') return null;
-  if (block.type === 'divider') return <hr className="border-border my-1" />;
-  if (block.type === 'heading1') return <p className="font-bold text-sm mt-2">{content}</p>;
-  if (block.type === 'heading2') return <p className="font-semibold text-xs mt-2 text-foreground/80">{content}</p>;
-  if (block.type === 'heading3') return <p className="font-medium text-xs mt-1 text-foreground/70">{content}</p>;
-  if (block.type === 'bullet') return (
-    <div className="flex gap-1.5 items-start text-xs text-muted-foreground">
-      <span className="mt-0.5 shrink-0">•</span><span>{content || '…'}</span>
-    </div>
+const VARIABLE_RE = /\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g;
+
+function getTemplateBlocks(template) {
+  if (!template) return [];
+  if (Array.isArray(template.blocks)) return template.blocks;
+  try { return JSON.parse(template.content || '[]'); } catch { return []; }
+}
+
+function detectTemplateVariables(template) {
+  const blocks = getTemplateBlocks(template);
+  const found = new Set();
+  for (const b of blocks) {
+    let m;
+    while ((m = VARIABLE_RE.exec(b.content || '')) !== null) found.add(m[1]);
+  }
+  return [...found];
+}
+
+function applyTemplateValues(text, values) {
+  if (!text) return text;
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.replaceAll(`{{${key}}}`, value || `{{${key}}}`),
+    text
   );
-  if (block.type === 'numbered') return (
-    <div className="flex gap-1.5 items-start text-xs text-muted-foreground">
-      <span className="mt-0.5 shrink-0">1.</span><span>{content || '…'}</span>
-    </div>
-  );
-  if (block.type === 'todo') return (
-    <div className="flex gap-1.5 items-center text-xs text-muted-foreground">
-      <span className="shrink-0">{block.checked ? '☑' : '☐'}</span>
-      <span className={block.checked ? 'line-through opacity-60' : ''}>{content || '…'}</span>
-    </div>
-  );
-  if (block.type === 'callout') return (
-    <div className="flex gap-1.5 items-center text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
-      <span className="shrink-0">{block.emoji || '💡'}</span><span>{content || '…'}</span>
-    </div>
-  );
-  if (block.type === 'quote') return (
-    <div className="border-l-2 border-border pl-2 text-xs text-muted-foreground italic">{content || '…'}</div>
-  );
-  return <p className="text-xs text-muted-foreground">{content || '…'}</p>;
+}
+
+function formatPreviewContent(text) {
+  if (!text) return text || '';
+  return text.replace(VARIABLE_RE, (_, name) => `<span class="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground">{{${name}}}</span>`);
+}
+
+function buildPreviewBlocks(template) {
+  return getTemplateBlocks(template).map((block) => ({
+    ...block,
+    content: formatPreviewContent(block.content),
+    caption: block.caption ? formatPreviewContent(block.caption) : block.caption,
+  }));
+}
+
+function substituteBlocks(blocks, values) {
+  return blocks.map((block) => ({
+    ...block,
+    content: applyTemplateValues(block.content, values),
+    caption: block.caption ? applyTemplateValues(block.caption, values) : block.caption,
+  }));
+}
+
+function createPagePayload(template, values, user, orgId, parentId) {
+  const templateBlocks = getTemplateBlocks(template);
+  const finalBlocks = substituteBlocks(templateBlocks, values || []).map((block) => ({
+    ...block,
+    id: block.id || Math.random().toString(36).slice(2),
+  }));
+  return {
+    title: applyTemplateValues(template.template_name || template.name || 'Untitled', values || {}),
+    icon: template.icon || '📄',
+    org_id: orgId,
+    parent_id: parentId || null,
+    content: JSON.stringify(finalBlocks),
+    is_template: false,
+    created_by_email: user?.email || '',
+    created_by_name: user?.full_name || user?.email || '',
+    category: null,
+    reviewers: [],
+  };
 }
 
 // ── Template card ──────────────────────────────────────────────────────────
-function TemplateCard({ template, isUser, selected, onSelect, onUse, onUntemplate }) {
+function TemplateCard({ template, isUser, selected, onSelect, onUse, onPreview, onUntemplate }) {
   const vars = useMemo(() => {
     if (template.template_variables) {
       try { return JSON.parse(template.template_variables); } catch { return []; }
@@ -324,13 +358,21 @@ function TemplateCard({ template, isUser, selected, onSelect, onUse, onUntemplat
         </div>
       )}
 
-      <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex flex-wrap items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
         <Button
           size="sm"
           className="h-6 px-2 text-xs"
           onClick={(e) => { e.stopPropagation(); onUse(template); }}
         >
           Use template
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-xs"
+          onClick={(e) => { e.stopPropagation(); onPreview(template); }}
+        >
+          Preview
         </Button>
         {isUser && (
           <Button
@@ -359,19 +401,8 @@ function PreviewPanel({ template, onUse }) {
     );
   }
 
-  const blocks = Array.isArray(template.blocks)
-    ? template.blocks
-    : (() => { try { return JSON.parse(template.content || '[]'); } catch { return []; } })();
-
-  const vars = (() => {
-    if (template.template_variables) {
-      try { return JSON.parse(template.template_variables); } catch { return []; }
-    }
-    const re = /\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g;
-    const found = new Set();
-    for (const b of blocks) { let m; while ((m = re.exec(b.content || '')) !== null) found.add(m[1]); }
-    return [...found];
-  })();
+  const previewBlocks = buildPreviewBlocks(template);
+  const vars = detectTemplateVariables(template);
 
   return (
     <div className="flex flex-col h-full">
@@ -411,11 +442,23 @@ function PreviewPanel({ template, onUse }) {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto mt-3 space-y-0.5 pr-1">
-        {blocks.map((block, i) => (
-          <BlockPreview key={block.id || i} block={block} />
+      <div className="flex-1 overflow-y-auto mt-3 space-y-2 pr-1 pb-4">
+        {previewBlocks.map((block, i) => (
+          <BlockRenderer
+            key={block.id || i}
+            block={block}
+            onChange={() => {}}
+            onDelete={() => {}}
+            onAddAfter={() => {}}
+            onSlash={() => {}}
+            onPasteBlocks={() => {}}
+            onMoveUp={() => {}}
+            onMoveDown={() => {}}
+            onDuplicate={() => {}}
+            readOnly
+          />
         ))}
-        {blocks.length === 0 && (
+        {previewBlocks.length === 0 && (
           <p className="text-xs text-muted-foreground">No blocks in this template.</p>
         )}
       </div>
@@ -434,6 +477,8 @@ export default function Templates() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [useDialog, setUseDialog] = useState(false);
   const [targetTemplate, setTargetTemplate] = useState(null);
+  const [previewTemplate, setPreviewTemplate] = useState(null);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
 
   // Fetch user-created templates for this org
   const { data: userTemplates = [] } = useQuery({
@@ -472,9 +517,27 @@ export default function Templates() {
     });
   }, [search, activeCategory, userTemplates]);
 
-  const handleUse = (template) => {
+  const handleUse = async (template) => {
+    const vars = detectTemplateVariables(template);
+    if (vars.length === 0) {
+      try {
+        const payload = createPagePayload(template, {}, user, currentOrg?.id, null);
+        const newPage = await Page.create(payload);
+        toast.success('Page created from template');
+        navigate(`/page/${newPage.id}`);
+      } catch {
+        toast.error('Failed to create page');
+      }
+      return;
+    }
+
     setTargetTemplate(template);
     setUseDialog(true);
+  };
+
+  const handlePreview = (template) => {
+    setPreviewTemplate(template);
+    setPreviewDialogOpen(true);
   };
 
   const handleUntemplate = async (template) => {
@@ -540,6 +603,7 @@ export default function Templates() {
                     selected={selectedTemplate?.id === t.id}
                     onSelect={setSelectedTemplate}
                     onUse={handleUse}
+                    onPreview={handlePreview}
                     onUntemplate={handleUntemplate}
                   />
                 ))}
@@ -561,6 +625,7 @@ export default function Templates() {
                     selected={!selectedTemplate?.id && selectedTemplate?.name === t.name}
                     onSelect={setSelectedTemplate}
                     onUse={handleUse}
+                    onPreview={handlePreview}
                     onUntemplate={() => {}}
                   />
                 ))}
@@ -600,6 +665,41 @@ export default function Templates() {
         parentId={null}
         onCreated={(pageId) => navigate(`/page/${pageId}`)}
       />
+
+      <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
+        <DialogContent className="sm:max-w-3xl lg:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-2xl">{previewTemplate?.icon || '📄'}</span>
+              Preview template
+            </DialogTitle>
+            <DialogDescription>
+              {previewTemplate?.template_name || previewTemplate?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 max-h-[70vh] overflow-y-auto space-y-2">
+            {previewTemplate ? (
+              buildPreviewBlocks(previewTemplate).map((block, i) => (
+                <BlockRenderer
+                  key={block.id || i}
+                  block={block}
+                  onChange={() => {}}
+                  onDelete={() => {}}
+                  onAddAfter={() => {}}
+                  onSlash={() => {}}
+                  onPasteBlocks={() => {}}
+                  onMoveUp={() => {}}
+                  onMoveDown={() => {}}
+                  onDuplicate={() => {}}
+                  readOnly
+                />
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No preview available.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

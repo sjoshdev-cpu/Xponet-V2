@@ -20,6 +20,7 @@ import {
   Collapsible, CollapsibleContent, CollapsibleTrigger
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { canAccessCommandCenter } from '@/lib/permissions';
 import { getPageRoute } from '@/lib/pageRouter';
 
 // Flat, non-recursive page row — rendered by the virtualizer
@@ -148,7 +149,7 @@ function PageRow({ page, level, hasChildren, isExpanded, activePath, onToggle, o
 }
 
 export default function Sidebar({ onOpenSearch }) {
-  const { currentOrg, sidebarOpen, setSidebarOpen, user } = useWorkspace();
+  const { currentOrg, sidebarOpen, setSidebarOpen, user, role } = useWorkspace();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -344,13 +345,15 @@ export default function Sidebar({ onOpenSearch }) {
           <Ticket className="h-4 w-4 text-muted-foreground" />
           <span>Tickets</span>
         </Link>
-        <Link to="/command-center" className={cn(
-          'flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors',
-          location.pathname === '/command-center' ? 'bg-sidebar-accent font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent/60'
-        )}>
-          <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
-          <span>Command Center</span>
-        </Link>
+        {canAccessCommandCenter(role) && (
+          <Link to="/command-center" className={cn(
+            'flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors',
+            location.pathname === '/command-center' ? 'bg-sidebar-accent font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent/60'
+          )}>
+            <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
+            <span>Command Center</span>
+          </Link>
+        )}
         <Link to="/databases" className={cn(
           'flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors',
           location.pathname.startsWith('/database') ? 'bg-sidebar-accent font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent/60'

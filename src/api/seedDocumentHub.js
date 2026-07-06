@@ -130,6 +130,40 @@ export async function seedHubViews(dbId, orgId, userEmail = '') {
   ]);
 }
 
+const DEFAULT_DATABASE_VIEWS = [
+  { name: 'Table', type: 'table', order: 0 },
+  { name: 'Board', type: 'board', order: 1 },
+  { name: 'List', type: 'list', order: 2 },
+  { name: 'Gallery', type: 'gallery', order: 3 },
+];
+
+/**
+ * seedDatabaseViews(dbId, orgId)
+ *
+ * Creates a default set of views for any database that has none.
+ * This is idempotent and only runs when the database has zero saved views.
+ *
+ * @param {string} dbId
+ * @param {string} orgId
+ */
+export async function seedDatabaseViews(dbId, orgId) {
+  const existing = await DatabaseView.filter({ database_id: dbId });
+  if (existing.length) return null;
+
+  await Promise.all(DEFAULT_DATABASE_VIEWS.map((view) =>
+    DatabaseView.create({
+      database_id: dbId,
+      org_id: orgId,
+      name: view.name,
+      type: view.type,
+      filters: [],
+      sorts: [],
+      hidden_props: [],
+      order: view.order,
+    })
+  ));
+}
+
 /**
  * seedHubRecords(dbId, orgId, userEmail)
  *

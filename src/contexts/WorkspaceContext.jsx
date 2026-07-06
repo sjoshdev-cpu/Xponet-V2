@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useAuth } from '@/lib/AuthContext';
 import { Organization, Page } from '@/api/firestoreClient';
 import { seedDocumentHub } from '@/api/seedDocumentHub';
+import { buildMemberFields, getRole } from '@/lib/permissions';
 
 const WorkspaceContext = createContext(null);
 
@@ -61,18 +62,14 @@ export function WorkspaceProvider({ children }) {
     }
     setLoading(true);
 
-    let allOrgs = await Organization.filter({});
-    let userOrgs = allOrgs.filter(o =>
-      o.owner_email === firebaseUser.email ||
-      (o.members || []).some(m => m.email === firebaseUser.email)
-    );
+    let userOrgs = await Organization.filter({ memberEmails: { arrayContains: firebaseUser.email } });
 
     if (userOrgs.length === 0) {
       const newOrg = await Organization.create({
         name: `${firebaseUser.displayName || 'My'}'s Workspace`,
         icon: '🏠',
         owner_email: firebaseUser.email,
-        members: [{ email: firebaseUser.email, role: 'admin', full_name: firebaseUser.displayName || '' }]
+        ...buildMemberFields([{ email: firebaseUser.email, role: 'admin', full_name: firebaseUser.displayName || '' }]),
       });
       userOrgs = [newOrg];
 
@@ -132,11 +129,7 @@ export function WorkspaceProvider({ children }) {
 
   const refreshOrgs = useCallback(async () => {
     if (!firebaseUser) return;
-    const allOrgs = await Organization.filter({});
-    const userOrgs = allOrgs.filter(o =>
-      o.owner_email === firebaseUser.email ||
-      (o.members || []).some(m => m.email === firebaseUser.email)
-    );
+    const userOrgs = await Organization.filter({ memberEmails: { arrayContains: firebaseUser.email } });
     setOrgs(userOrgs);
     if (currentOrg) {
       const updated = userOrgs.find(o => o.id === currentOrg.id);
@@ -144,9 +137,11 @@ export function WorkspaceProvider({ children }) {
     }
   }, [firebaseUser, currentOrg]);
 
+  const role = getRole(currentOrg, user?.email);
+
   return (
     <WorkspaceContext.Provider value={{
-      user, currentOrg, orgs, loading,
+      user, currentOrg, orgs, loading, role,
       sidebarOpen, setSidebarOpen,
       theme, setTheme,
       switchOrg, refreshOrgs, initWorkspace

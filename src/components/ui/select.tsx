@@ -58,8 +58,13 @@ function SelectTrigger({
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
-  align = "center",
+  // "popper" anchors the dropdown to the trigger. The item-aligned mode only
+  // positions itself when the trigger contains a <SelectValue> AND an item
+  // matches the current value — several call sites render a custom badge in
+  // the trigger instead, which left the dropdown stuck unpositioned at the
+  // viewport corner.
+  position = "popper",
+  align = "start",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -104,10 +109,14 @@ function SelectLabel({
 function SelectItem({
   className,
   children,
+  value,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item>) {
+  const safeValue = value == null ? '' : String(value);
+
   return (
     <SelectPrimitive.Item
+      value={safeValue}
       data-slot="select-item"
       className={cn(
         "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",

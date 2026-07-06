@@ -81,7 +81,7 @@ export default function FilterSortBar({ schema, filters, sorts, onFiltersChange,
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {editableSchema.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    {editableSchema.filter(p => p?.id).map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 {/* Op picker */}
@@ -101,7 +101,7 @@ export default function FilterSortBar({ schema, filters, sorts, onFiltersChange,
                         <SelectValue placeholder="value" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(prop?.options ?? []).map(o => <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>)}
+                        {(prop?.options ?? []).filter(o => o?.id).map(o => <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : (
@@ -148,7 +148,7 @@ export default function FilterSortBar({ schema, filters, sorts, onFiltersChange,
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {editableSchema.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  {editableSchema.filter(p => p?.id).map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={s.dir} onValueChange={val => updateSort(s.id, 'dir', val)}>

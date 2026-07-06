@@ -7,7 +7,7 @@ import {
 import { DatabaseRecord } from '@/api/firestoreClient.js';
 import { CellRenderer } from './CellRenderer.jsx';
 import { groupRecords, genId } from './db-utils.js';
-import { OPTION_COLOR_CLASSES } from './db-constants.js';
+import { OPTION_COLOR_CLASSES, getOptionBadgeClasses, getOptionBadgeStyle } from './db-constants.js';
 
 /**
  * Kanban board view — groups records by a select/status property.
@@ -63,7 +63,10 @@ export default function DatabaseBoard({
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 {col.id ? (
-                  <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${OPTION_COLOR_CLASSES[col.color] ?? OPTION_COLOR_CLASSES.gray}`}>
+                  <span
+                    className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${getOptionBadgeClasses(col.color)}`}
+                    style={getOptionBadgeStyle(col.color)}
+                  >
                     {col.label}
                   </span>
                 ) : (

@@ -8,6 +8,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Ticket, Task, Page } from '@/api/firestoreClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { usePresence } from '@/hooks/usePresence';
+import { PresenceAvatars } from '@/components/PresenceAvatars';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -200,6 +202,7 @@ export default function TicketDetail() {
   const { currentOrg, user } = useWorkspace();
   const queryClient = useQueryClient();
   const members = currentOrg?.members || [];
+  const { viewers } = usePresence('ticket', ticketId);
 
   const [showEscalate, setShowEscalate] = useState(false);
   const [noteText, setNoteText]         = useState('');
@@ -319,6 +322,7 @@ export default function TicketDetail() {
         <span className="text-muted-foreground/40">/</span>
         <span className="text-sm font-mono text-muted-foreground">T-{ticketId.slice(-3).toUpperCase()}</span>
         <div className="ml-auto flex items-center gap-2">
+          <PresenceAvatars viewers={viewers} />
           <StatusSelect ticket={ticket} onUpdate={update} />
           {!ticket.escalated && (
             <Button variant="outline" size="sm" className="gap-1.5 text-xs h-7 border-orange-200 text-orange-700 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400" onClick={() => setShowEscalate(true)}>

@@ -5,6 +5,8 @@ import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-d
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import RoleProtectedRoute from '@/components/RoleProtectedRoute';
+import { canAccessCommandCenter } from '@/lib/permissions';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 import { PeekProvider } from '@/contexts/PeekContext';
 import PeekPanel from '@/components/page/PeekPanel';
@@ -73,7 +75,9 @@ const AuthenticatedApp = () => {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tickets" element={<Tickets />} />
           <Route path="/tickets/:ticketId" element={<TicketDetail />} />
-          <Route path="/command-center" element={<CommandCenter />} />
+          <Route element={<RoleProtectedRoute check={canAccessCommandCenter} />}>
+            <Route path="/command-center" element={<CommandCenter />} />
+          </Route>
           <Route path="/databases" element={<Databases />} />
           <Route path="/database/:dbId" element={<DatabaseDetail />} />
           <Route path="/document-hub" element={<DocumentHub />} />

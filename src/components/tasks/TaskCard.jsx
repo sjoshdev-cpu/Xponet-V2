@@ -1,6 +1,7 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { getAssignees, getInitials } from '@/lib/task-utils';
 
 const safeDate = (val) => {
   if (!val) return new Date();
@@ -24,6 +25,7 @@ const PRIORITY_BADGE = {
 };
 
 export default function TaskCard({ task, onClick, isDragging }) {
+  const assignees = getAssignees(task);
   return (
     <div
       onClick={onClick}
@@ -45,9 +47,19 @@ export default function TaskCard({ task, onClick, isDragging }) {
               {format(safeDate(task.due_date), 'MMM d')}
             </span>
           )}
-          {task.assignee_name && (
-            <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
-              {task.assignee_name.charAt(0).toUpperCase()}
+          {assignees.length > 0 && (
+            <div className="flex -space-x-1.5 shrink-0">
+              {assignees.slice(0, 3).map((a, i) => (
+                <div key={a.email || i} title={a.name || a.email}
+                  className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary border-2 border-card">
+                  {getInitials(a)}
+                </div>
+              ))}
+              {assignees.length > 3 && (
+                <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[8px] font-bold text-muted-foreground border-2 border-card">
+                  +{assignees.length - 3}
+                </div>
+              )}
             </div>
           )}
         </div>

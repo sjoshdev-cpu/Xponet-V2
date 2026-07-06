@@ -1,6 +1,6 @@
 # Xponet – Codebase Documentation
 
-> Last updated: May 28, 2026 (post-session: column management, shared DB components, pageRouter)
+> Last updated: July 6, 2026 (post-session: three-tier RBAC + multi-assignee tasks, due-date email reminders, page linking — backlinks/inline mentions/recently-viewed, inline database embeds, rich table block, row templates, offline/retry/presence reliability UI, Sentry error tracking, TLS/Nginx deploy hardening)
 
 ---
 
@@ -29,6 +29,15 @@
 21. [Key Data Flows](#21-key-data-flows)
 22. [Route Map](#22-route-map)
 23. [Document Hub Feature](#23-document-hub-feature)
+24. [Audit Log System](#24-audit-log-system)
+25. [Error Boundary System](#25-error-boundary-system)
+26. [Role-Based Access Control & Multi-Assignee Tasks](#26-role-based-access-control--multi-assignee-tasks)
+27. [Task Due-Date Reminders](#27-task-due-date-reminders)
+28. [Page Linking — Backlinks, Mentions & Recently Viewed](#28-page-linking--backlinks-mentions--recently-viewed)
+29. [Inline Database Embeds & Rich Table Block](#29-inline-database-embeds--rich-table-block)
+30. [Row Templates](#30-row-templates)
+31. [Reliability, Presence & Observability UI](#31-reliability-presence--observability-ui)
+32. [Deployment Hardening & Ops Scripts](#32-deployment-hardening--ops-scripts)
 
 ---
 
@@ -45,7 +54,7 @@
 - Upload and attach files (images, PDFs, documents) via Cloudinary
 - Light / Dark / System theme
 
-The backend is provided by **Firebase** (Auth + Firestore) and **Cloudinary** (file uploads). No custom server code exists in this repo. The app is deployed to **Firebase Hosting** at https://xponet-f6f56.web.app.
+The backend is provided by **Firebase** (Auth + Firestore) and **Cloudinary** (file uploads). No custom server code exists in this repo. The app is deployed to a **GCP Virtual Machine** at **http://35.232.106.86**, served by Nginx.
 
 Core capabilities:
 
@@ -68,21 +77,26 @@ Core capabilities:
 | Layer | Technology | Version |
 |---|---|---|
 | Build tool | Vite | ^8.0 |
-| UI framework | React | ^19 |
-| Routing | React Router DOM | ^7 |
-| Server state | TanStack React Query | ^5 |
-| Virtualisation | @tanstack/react-virtual | ^3 |
+| UI framework | React | ^19.2 |
+| Routing | React Router DOM | ^7.15 |
+| Server state | TanStack React Query | ^5.100 |
+| Virtualisation | @tanstack/react-virtual | ^3.13 |
 | Styling | Tailwind CSS | ^3.4 |
-| UI primitives | Radix UI (via shadcn/ui) | various |
+| UI primitives | Radix UI (via shadcn/ui) | ^1.4 |
 | Icons | Lucide React | ^1.16 |
-| Drag & Drop | @hello-pangea/dnd | ^18 |
-| Toasts | Sonner | ^2 |
-| Date utilities | date-fns | ^4 |
-| Command palette | cmdk | ^1 |
-| Auth | Firebase Auth | ^11 |
-| Database | Firebase Firestore | ^11 |
-| Hosting | Firebase Hosting | — |
+| Drag & Drop | @hello-pangea/dnd | ^18.0 |
+| Toasts | Sonner | ^2.0 |
+| Date utilities | date-fns | ^4.2 |
+| Command palette | cmdk | ^1.1 |
+| Charts | Recharts | ^3.8 |
+| Carousel | Embla Carousel React | ^8.6 |
+| Panels | react-resizable-panels | ^4.11 |
+| Drawer | Vaul | ^1.1 |
+| Auth | Firebase Auth | ^12.13 |
+| Database | Firebase Firestore | ^12.13 |
+| Storage | Firebase Storage | ^12.13 |
 | File uploads | Cloudinary (unsigned upload) | REST API |
+| Font | Geist Variable | @fontsource-variable/geist |
 
 ---
 
@@ -109,8 +123,9 @@ xponet-base44/
     │   └── base44Client.js          # Legacy Base44 SDK client (unused)
     ├── lib/
     │   ├── firebase.js              # Firebase app init; exports auth, db, storage
-    │   ├── cloudinary.js            # Cloudinary upload utility
+    │   ├── cloudinary.js            # Cloudinary upload utility (reads VITE_CLOUDINARY_* env vars)
     │   ├── AuthContext.jsx          # Auth state provider + useAuth()
+    │   ├── auditLog.js              # Audit log write (logAuditEvent) + read (fetchAuditPage) utility
     │   ├── app-params.js            # Runtime config (env / URL / localStorage)
     │   ├── query-client.js          # TanStack QueryClient instance
     │   ├── pageRouter.js            # Smart page-to-route resolver (getPageRoute)
@@ -137,12 +152,13 @@ xponet-base44/
     │   └── View.json                # Document Hub saved view
     ├── components/
     │   ├── AuthLayout.jsx           # Centered card shell for auth pages
+    │   ├── ErrorBoundary.jsx        # TopLevelErrorBoundary + SectionErrorBoundary (class components)
     │   ├── GoogleIcon.jsx           # Google "G" SVG logo
     │   ├── ProtectedRoute.jsx       # Auth guard (renders Outlet or redirect)
     │   ├── UserNotRegisteredError.jsx
     │   ├── database/
     │   │   ├── AddPropertyModal.jsx        # Shared "Add a property" dialog (Databases + DocumentHub)
-    │   │   ├── ColumnHeaderDropdown.jsx    # Shared column-header hover dropdown (Sort/Hide/Delete)
+    │   │   ├── ColumnHeaderDropdown.jsx    # Shared column-header hover dropdown (Sort/Hide/Delete/Edit options)
     │   │   ├── CustomizeDatabaseSheet.jsx  # Right-side sheet: toggle column visibility per view
     │   │   ├── DatabaseTable.jsx           # Generic reusable database table view
     │   │   ├── DatabaseBoard.jsx           # Kanban board view for databases
@@ -154,13 +170,14 @@ xponet-base44/
     │   │   ├── CellEditor.jsx              # Inline cell editor
     │   │   ├── CellRenderer.jsx            # Cell display renderer
     │   │   ├── LinkedDatabaseBlock.jsx     # Embeddable database block
-    │   │   ├── db-constants.js             # Database type/property constants
-    │   │   └── db-utils.js                 # Database utility helpers
+    │   │   ├── StatusOptionsPanel.jsx      # Modal for editing select/status option names + colors
+    │   │   ├── db-constants.js             # Database type/property constants + VIEW_TYPES + OPTION_COLORS
+    │   │   └── db-utils.js                 # applyFilters, applySorts, genId helpers
     │   ├── layout/
     │   │   ├── WorkspaceLayout.jsx  # App shell (sidebar + outlet)
     │   │   ├── Sidebar.jsx          # Left nav + page tree (virtualised)
     │   │   ├── CommandPalette.jsx   # Cmd+K search modal
-    │   │   └── PageHeader.jsx       # Shared page-level header bar (F23)
+    │   │   └── PageHeader.jsx       # Shared page-level header bar
     │   ├── editor/
     │   │   ├── BlockRenderer.jsx    # Renders one block (16 types)
     │   │   ├── SlashMenu.jsx        # "/" command dropdown
@@ -168,17 +185,28 @@ xponet-base44/
     │   │   ├── CoverImage.jsx       # Page cover (gradients / URL)
     │   │   └── EmojiPicker.jsx      # Emoji selector popover
     │   ├── page/
-    │   │   ├── CommentsSection.jsx  # Threaded comments + @mentions
-    │   │   └── PeekPanel.jsx        # Slide-in page peek panel (F24)
+    │   │   ├── CommentsSection.jsx        # Threaded comments + @mentions
+    │   │   ├── InlineCommentThread.jsx    # Single threaded comment inline
+    │   │   ├── MentionInput.jsx           # @mention autocomplete input
+    │   │   ├── PagePermissionsDialog.jsx  # Per-page permission management dialog
+    │   │   └── PeekPanel.jsx              # Slide-in page peek panel
+    │   ├── settings/
+    │   │   └── AuditLogTab.jsx      # Admin-only audit log viewer (filter + paginated table)
     │   ├── tasks/
-    │   │   ├── KanbanBoard.jsx      # Drag-and-drop status columns
-    │   │   ├── TaskCard.jsx         # Compact task card
-    │   │   ├── TaskModal.jsx        # Create / edit task dialog
-    │   │   └── TaskTable.jsx        # Sortable task table (virtualised)
+    │   │   ├── KanbanBoard.jsx       # Drag-and-drop status columns
+    │   │   ├── TaskCard.jsx          # Compact task card
+    │   │   ├── TaskModal.jsx         # Create / edit task dialog
+    │   │   ├── TaskTable.jsx         # Sortable task table (virtualised)
+    │   │   ├── QuickAddTask.jsx      # Inline single-line task creation widget
+    │   │   ├── LinkedTasksPanel.jsx  # Slide-in panel for tasks linked to a ticket
+    │   │   └── WorkloadView.jsx      # Task view grouped by assignee
+    │   ├── templates/
+    │   │   ├── SaveAsTemplateDialog.jsx  # Save current page as template
+    │   │   └── UseTemplateDialog.jsx     # Preview + create page from template
     │   └── ui/
-    │       ├── FileUploadButton.jsx # Cloudinary upload button component
-    │       ├── UploadedFilePreview.jsx  # File preview card (image/doc)
-    │       └── …                   # shadcn/ui primitives (button, dialog, etc.)
+    │       ├── FileUploadButton.jsx      # Cloudinary upload button component
+    │       ├── UploadedFilePreview.jsx   # File preview card + CompactFileChip export
+    │       └── …                         # shadcn/ui primitives (button, dialog, popover, etc.)
     └── pages/
         ├── Login.jsx
         ├── Register.jsx
@@ -195,7 +223,9 @@ xponet-base44/
         ├── Tickets.jsx              # Support tickets list (F26)
         ├── TicketDetail.jsx         # Full-page ticket detail (F26)
         ├── CommandCenter.jsx        # Real-time ops dashboard (F27)
-        └── DocumentHub.jsx          # Notion-style document database hub (F28)
+        ├── DocumentHub.jsx          # Notion-style document database hub (F28)
+        ├── Databases.jsx            # Database gallery + full table/board/list editor
+        └── DatabaseDetail.jsx       # Full database detail view (/database/:dbId)
 ```
 
 ---
@@ -203,7 +233,7 @@ xponet-base44/
 ## 4. Entry Points
 
 ### `src/main.jsx`
-Standard React 19 bootstrap. Mounts `<App />` into `#root` and imports `index.css`.
+Standard React 19 bootstrap. Mounts `<App />` into `#root` and imports `index.css`. Initialises **Sentry** (`@sentry/react`) before the React tree so all unhandled exceptions are captured. Wraps `<App />` in `<Sentry.ErrorBoundary>`.
 
 ### `src/App.jsx`
 The root component. Provider nesting order:
@@ -224,19 +254,32 @@ AuthProvider
 
 Protected routes use `WorkspaceWrapper` which composes `WorkspaceProvider` → `WorkspaceLayout`.
 
+**Route-wrapper components (added for error boundary `resetKey` support):**
+
+Two thin functional components live in `App.jsx` and are used as route `element` instead of inline JSX:
+
+| Component | Route | What it does |
+|---|---|---|
+| `PageEditorRoute` | `/page/:pageId` | Reads `pageId` via `useParams()`, passes it as `resetKey` to `<SectionErrorBoundary name="Page editor">` |
+| `DatabaseDetailRoute` | `/database/:dbId` | Reads `dbId` via `useParams()`, passes it as `resetKey` to `<SectionErrorBoundary name="Database">` |
+
+This ensures navigating between pages (e.g. `/page/abc` → `/page/xyz`) always gives a fresh error boundary, preventing a stale crashed boundary from blocking the new page.
+
 ---
 
 ## 5. Backend / API
 
 ### `src/lib/firebase.js`
 
-Initialises the Firebase app from environment variables and exports three service singletons:
+Initialises the Firebase app with **hardcoded production credentials** and exports three service singletons. Values are hardcoded (not `import.meta.env`) so builds succeed on the GCP VM without a `.env` file.
 
 | Export | Type | Purpose |
 |---|---|---|
 | `auth` | `Auth` | Firebase Authentication instance |
 | `db` | `Firestore` | Firestore database instance (named `"xponet"`) |
-| `storage` | `Storage` | Firebase Storage instance (requires Blaze plan to activate) |
+| `storage` | `Storage` | Firebase Storage instance |
+
+Firebase project: **`xponet-f6f56`** — auth domain `xponet-f6f56.firebaseapp.com`.
 
 ### `src/api/firestoreClient.js`
 
@@ -610,7 +653,7 @@ The main editing experience.
 | Breadcrumbs | Traverses `parent_id` chain upward through the loaded page list |
 | Full-width toggle | Stored in `page.is_full_width`; toggles `max-w-3xl` constraint |
 | Font toggle | Stored in `page.font_style`; passed as prop to each `<BlockRenderer>` |
-| Lock page | Stored in `page.is_locked`; disables all `contentEditable` blocks |
+| Lock page | Stored in `page.is_locked`; disables all `contentEditable` blocks. Fires `PAGE_LOCK` / `PAGE_UNLOCK` audit event. |
 | Share page | Dialog toggles `is_shared`, generates `share_token`, optional password |
 | Block editor | Array of block objects, each rendered by `<BlockRenderer>` |
 | Slash menu | Typing `/` triggers `<SlashMenu>` at the cursor position |
@@ -620,6 +663,9 @@ The main editing experience.
 | Attachments panel | `attachments` state; uploaded files shown as `<UploadedFilePreview>` cards below the editor; images also auto-inserted as image blocks |
 | Comments | `<CommentsSection pageId orgId>` docked below attachments |
 | Visit tracking | Updates `last_visited_by` on mount |
+| Audit events | `PAGE_LOCK`, `PAGE_UNLOCK`, `PAGE_DELETE`, `PAGE_PERMISSION_CHANGE` fired at the appropriate lifecycle points via `logAuditEvent` |
+
+**TDZ fix (applied):** `useState('idle')` for `saveStatus` is declared on its own line *before* `usePresence(...)` which reads `saveStatus`. This avoids the Temporal Dead Zone that would occur if both were on the same `const` declaration.
 
 ### `src/pages/Tasks.jsx`
 Fetches all tasks for `currentOrg`. Three tab views:
@@ -652,13 +698,21 @@ Lists pages where `is_deleted: true`. Per-item actions:
 "Use Template" creates a new `Page` from the template's block array and navigates to it.
 
 ### `src/pages/Settings.jsx`
-Three tabs:
+Four tabs (admin sees all four; non-admins see only the first three):
 
 | Tab | Content |
 |---|---|
 | Account | Display name, email (read-only), Logout button |
-| Workspace | Org name + icon editor, member list, invite by email, role toggle, remove member |
+| Workspace | Org name + icon editor, member list with inline role Select (Admin / Member) for admins, invite by email, remove member |
 | Appearance | Light / Dark / System theme radio buttons |
+| Audit Log | **Admin only** — renders `<AuditLogTab orgId={currentOrg.id}>` |
+
+**Member role management:** Each member row shows a `<Select>` (Admin / Member) for admins editing other members. Changing a role calls `changeMemberRole(email, newRole)` which fires `MEMBER_ROLE_CHANGE` audit event and calls `Organization.update()`.
+
+**Audit log integration:**
+- Invite member → `MEMBER_INVITE` (with role metadata)
+- Remove member → `MEMBER_REMOVE`
+- Change role → `MEMBER_ROLE_CHANGE` (with `{ fromRole, toRole }`)
 
 Uses `<PageHeader icon="⚙️" title="Settings" />` for the consistent top bar.
 
@@ -721,6 +775,55 @@ Full-page detail view for a single ticket.
 | `SlaBlock` | Color-coded SLA summary in the right sidebar (breached = red, at risk = orange, ok = green) |
 
 All updates via `useMutation` append to the `ticket.activity` array.
+
+### `src/pages/Databases.jsx`
+
+Full Notion-like standalone database page (distinct from the Document Hub). Provides a gallery of all user-created databases with the ability to create new ones from presets.
+
+**Database presets (5):**
+- Knowledge Base
+- Project Tracker
+- CRM
+- Meeting Notes
+- Custom
+
+**View modes:** Table, Board, List (tab-switched via `VIEW_TYPES`)
+
+**Column types supported (12):** Text, Number, Select, Multi-select, Status, Date, Person, Files & media, URL, Email, Phone, Checkbox
+
+**Key features:**
+- "New database" modal with preset selection
+- Inline cell editing across all column types
+- `<AddPropertyModal>` for adding new columns
+- `<ColumnHeaderDropdown>` for sort / hide / delete per column
+- Export as CSV (triggers browser download)
+- Import CSV (auto-builds columns + rows from CSV headers/rows)
+- Hide / show columns per view via `<CustomizeDatabaseSheet>`
+- Lock / unlock database
+- Delete rows (trash icon on hover)
+- Delete columns (via column header dropdown)
+- Search/filter rows client-side
+- Auto-save to Firestore on every change via `Page.update()`
+- Files & media column uses `<CompactFileChip>` with inline Cloudinary upload
+
+### `src/pages/DatabaseDetail.jsx`
+
+Full-page detail view for a single database (reached via `/database/:dbId`). Fetches the database, its records, and its saved views. Supports all four view modes and full column management.
+
+**Layout:**
+- Top bar: back arrow → `/databases`, database title, view tabs, action menus
+- Active view area: renders `<DatabaseTable>`, `<DatabaseBoard>`, `<DatabaseGallery>`, or `<DatabaseList>` depending on active tab
+- `<FilterSortBar>` for filter + sort controls
+- `<RecordModal>` — full record detail dialog
+- `<PropertyEditor>` — edit a record's property values
+
+**Data flow:**
+```
+useQuery(['database', dbId])     → Database.get(dbId)
+useQuery(['records', dbId])      → DatabaseRecord.filter({ database_id: dbId })
+useQuery(['views', dbId])        → DatabaseView.filter({ database_id: dbId })
+```
+All mutations use `queryClient.invalidateQueries` on success.
 
 ### `src/pages/CommandCenter.jsx` (F27)
 
@@ -1011,6 +1114,15 @@ Tabular view. Columns: Title, Status, Priority, Assignee, Due Date, Effort. Feat
 - Bulk delete action on selected tasks
 - **Virtualisation (F22):** uses `@tanstack/react-virtual` to render only visible rows via an overridden `display: block` tbody; each `<tr>` uses `display: table` with explicit column widths for correct alignment.
 
+### `src/components/tasks/QuickAddTask.jsx`
+Compact inline task creation widget. Renders a single-line input with keyboard shortcuts. On Enter, calls `Task.create()` with sensible defaults (`status: 'To Do'`, current org). Used in dashboard / home quick-action sections.
+
+### `src/components/tasks/LinkedTasksPanel.jsx`
+Slide-in panel that shows all tasks linked to a given entity (e.g., a Ticket via `ticket.linked_tasks`). Renders a compact task list with status badges and assignee info. Each row opens `<TaskModal>` in edit mode.
+
+### `src/components/tasks/WorkloadView.jsx`
+Alternative task view that groups tasks by assignee. Displays per-member task counts and a breakdown by status. Used optionally within `Tasks.jsx` as a fourth view tab.
+
 ---
 
 ## 13. Shared / Auth UI Components
@@ -1040,7 +1152,55 @@ Auth guard for protected routes.
 | Authenticated | `<Outlet>` |
 
 ### `src/components/UserNotRegisteredError.jsx`
-Full-page error state shown when a user is authenticated with Base44 but not enrolled in this specific app. Lists three remediation steps and advises contacting the admin.
+Full-page error state shown when a user is authenticated but not enrolled in this specific app. Lists three remediation steps and advises contacting the admin.
+
+### `src/components/page/InlineCommentThread.jsx`
+Renders a single threaded comment conversation inline within the page editor area. Shows root comment + replies in a compact collapsible block. Used inside `<CommentsSection>`.
+
+### `src/components/page/MentionInput.jsx`
+Controlled input component with `@mention` autocomplete. As the user types `@`, a dropdown appears listing org members by email. Selecting a member inserts their email as a mention token. Used inside `<CommentsSection>` for the comment compose box.
+
+### `src/components/page/PagePermissionsDialog.jsx`
+Dialog for managing per-page permissions. Lists current permission entries (`[{ email, role }]`) and allows the page owner to add new entries, change roles (owner / editor / viewer), or remove access. Writes to `page.permissions` via `Page.update()`.
+
+### `src/components/templates/SaveAsTemplateDialog.jsx`
+Dialog that lets a user save the current page as a reusable template. Sets `is_template: true`, `template_name`, and stamps `last_edited_by_*` via `withLastEditedBy`. Invalidates the `['pages', orgId]` query on success.
+
+### `src/components/templates/UseTemplateDialog.jsx`
+Dialog that previews a template and confirms creating a new page from it. Copies the template's block content into a new `Page.create()` call, sets `created_by_*` / `last_edited_by_*`, and navigates to the new page.
+
+### `src/components/database/StatusOptionsPanel.jsx`
+
+Modal for editing `select` or `status` property options (name, color, order, add, delete). Used in `DatabaseDetail.jsx` property configuration.
+
+**Color system:** Uses a `DOT_COLORS` map (8 colors) to apply solid Tailwind bg classes to option dot circles:
+
+```js
+const DOT_COLORS = {
+  gray:   'bg-gray-400',    red:    'bg-red-500',
+  orange: 'bg-orange-500',  yellow: 'bg-yellow-400',
+  green:  'bg-green-500',   blue:   'bg-blue-500',
+  purple: 'bg-purple-500',  pink:   'bg-pink-500',
+};
+```
+
+**Color picker:** Each option row shows a filled circle button. Clicking it opens a **Radix `<Popover>`** anchored to the circle, containing a 4×2 grid of color circles. This replaced a broken `<Select>` approach that couldn't render arbitrary colored children. State per row:
+- `openColorId` — tracks which row's popover is currently open
+- `focusingId` — set when a new option is added; causes that row's name input to auto-focus via `autoFocus` prop
+
+**New option defaults:** `addOpt()` picks a random color from `OPTION_COLORS` and sets the name to `'New option'` (previously hardcoded `'Option'` with always-gray color).
+
+**Keyboard:** Pressing Escape in the name input calls `inputRef.current.blur()`.
+
+### `src/components/settings/AuditLogTab.jsx`
+
+Admin-only component rendered inside `Settings.jsx`'s "Audit Log" tab.
+
+- Fetches audit events from Firestore `audit_logs` subcollection via `fetchAuditPage(orgId, { limit, action, actorEmail, startAfter })`
+- Supports filtering by **action type** (dropdown of all `AUDIT_ACTION_LABELS`) and **actor email** (text input)
+- Paginated: "Load more" appends the next page of results (cursor-based via Firestore `startAfter`)
+- Displays: timestamp, actor name/email, action label, target object, metadata (formatted as JSON key-value pairs)
+- Restricted by Firestore rules: only org admins can read `audit_logs`
 
 ---
 
@@ -1050,7 +1210,7 @@ File uploads are handled entirely via **Cloudinary** on the free Spark tier (25 
 
 ### `src/lib/cloudinary.js`
 
-Central upload utility. All Cloudinary credentials come from environment variables.
+Central upload utility. Credentials are read from `import.meta.env` (Vite env vars):
 
 **`uploadToCloudinary(file, folder?)`**
 
@@ -1259,20 +1419,68 @@ build.cssMinify: false                 // LightningCSS incompatible with Tailwin
 - `public: "dist"` — points Firebase Hosting at the Vite build output directory
 - SPA rewrite — all routes fall through to `index.html` for client-side routing
 
-### `.firebaserc`
+### Production Deployment (GCP VM — Active)
 
-Links this directory to the Firebase project `xponet-f6f56`. Generated by `firebase init`.
+The app is hosted on a GCP Virtual Machine served via Nginx. This is the **active production environment**.
 
-### Live URL
+| Detail | Value |
+|---|---|
+| VM Name | `expo-work-space` |
+| IP Address | `35.232.106.86` |
+| OS | Debian Linux |
+| Web Server | Nginx 1.22.1 |
+| Node.js | v20.20.2 |
+| npm | 10.8.2 |
+| GCP Project ID | `project-30ba7eb5-b70b-4124-b77` |
+| SSH Username | `exponentbizolution` |
+| SSH Key Path | `C:\Users\User\.ssh\id_ed25519` |
+| Build output on VM | `~/Xponet-V2/dist/` |
+| Served from | `/var/www/html/` |
+| **Live URL** | **http://35.232.106.86** |
 
-**https://xponet-f6f56.web.app**
-
-To rebuild and redeploy:
-
+**SSH access:**
 ```bash
-npm run build
-firebase deploy --only hosting
+ssh exponentbizolution@35.232.106.86
 ```
+
+**Nginx config** — active file is `/etc/nginx/sites-available/xponet` (NOT `default`):
+```nginx
+server {
+  listen 80 default_server;
+  listen [::]:80 default_server;
+  root /var/www/html;
+  server_name _;
+  location / {
+    add_header Cache-Control "no-store, no-cache, must-revalidate";
+    add_header Pragma "no-cache";
+    expires 0;
+    try_files $uri /index.html;
+  }
+}
+```
+
+**Deployment steps (run on VM):**
+```bash
+# 1. Pull latest code
+cd ~/Xponet-V2 && git pull
+# 2. Install dependencies (if package.json changed)
+npm install
+# 3. Clean build
+rm -rf dist node_modules/.vite && npm run build
+# 4. Deploy to Nginx
+sudo rm -rf /var/www/html/* && sudo cp -r ~/Xponet-V2/dist/* /var/www/html/
+# 5. Fix permissions
+sudo chown -R www-data:www-data /var/www/html/
+sudo chmod -R 755 /var/www/html/
+# 6. Reload Nginx
+sudo systemctl reload nginx
+```
+
+**GitHub repository:** https://github.com/sjoshdev-cpu/Xponet-V2
+
+### Firebase Hosting (Legacy — inactive)
+
+`firebase.json` and `.firebaserc` are retained in the repo from the previous Firebase Hosting setup. The old URL `https://xponet-f6f56.web.app` is no longer the primary deployment target. The GCP Nginx setup above is authoritative.
 
 ### `package.json` Scripts
 
@@ -1287,19 +1495,24 @@ firebase deploy --only hosting
 
 ## 19. Environment Variables
 
-All environment variables are defined in `.env` at the project root and accessed via `import.meta.env`.
+> **Note:** `src/lib/firebase.js` uses **hardcoded production values** to ensure reliable builds on the GCP VM where a `.env` file may not be present. `src/lib/cloudinary.js` uses `import.meta.env` (Vite env vars), so a `.env` file (or CI env vars) is required for Cloudinary to work in local dev. An `.env.example` file in the repo root lists all required variables.
 
-| Variable | Used by | Purpose |
+| Variable | Value | Purpose |
 |---|---|---|
-| `VITE_FIREBASE_API_KEY` | `src/lib/firebase.js` | Firebase project API key |
-| `VITE_FIREBASE_AUTH_DOMAIN` | `src/lib/firebase.js` | Firebase Auth domain |
-| `VITE_FIREBASE_PROJECT_ID` | `src/lib/firebase.js` | Firebase project ID (`xponet-f6f56`) |
-| `VITE_FIREBASE_STORAGE_BUCKET` | `src/lib/firebase.js` | Firebase Storage bucket |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | `src/lib/firebase.js` | FCM sender ID |
-| `VITE_FIREBASE_APP_ID` | `src/lib/firebase.js` | Firebase app ID |
-| `VITE_FIREBASE_MEASUREMENT_ID` | `src/lib/firebase.js` | Google Analytics measurement ID |
-| `VITE_CLOUDINARY_CLOUD_NAME` | `src/lib/cloudinary.js` | Cloudinary cloud name (`dv6empf1r`) |
-| `VITE_CLOUDINARY_UPLOAD_PRESET` | `src/lib/cloudinary.js` | Unsigned upload preset name (`xponet_uploads`) |
+| `VITE_FIREBASE_API_KEY` | `AIzaSyA7pRK0GeTT09PQ8Ui-nZYSoiqAqkB2Rpk` | Firebase project API key |
+| `VITE_FIREBASE_AUTH_DOMAIN` | `xponet-f6f56.firebaseapp.com` | Firebase Auth domain |
+| `VITE_FIREBASE_PROJECT_ID` | `xponet-f6f56` | Firebase project ID |
+| `VITE_FIREBASE_STORAGE_BUCKET` | `xponet-f6f56.firebasestorage.app` | Firebase Storage bucket |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | `676894766537` | FCM sender ID |
+| `VITE_FIREBASE_APP_ID` | `1:676894766537:web:941595a5d3c8155ca7e418` | Firebase app ID |
+| `VITE_FIREBASE_MEASUREMENT_ID` | `G-3L5RKY7LYD` | Google Analytics measurement ID |
+| `VITE_CLOUDINARY_CLOUD_NAME` | `dv6empf1r` | Cloudinary cloud name |
+| `VITE_CLOUDINARY_UPLOAD_PRESET` | `xponet_uploads` | Unsigned upload preset name |
+
+**Firebase Authorized Domains** (Console → Authentication → Settings):
+- `35.232.106.86` (production VM IP)
+- `xponet-f6f56.firebaseapp.com`
+- `localhost`
 
 ---
 
@@ -1333,6 +1546,9 @@ All environment variables are defined in `.env` at the project root and accessed
 | `notifications` | recipient only | any authed user | recipient only | recipient only |
 | `databases`, `records`, `views` | org member | org member | org member | org member |
 | `presence/{userId}` | any authed user | `request.auth.uid == userId` | same uid | same uid |
+| `audit_logs/{orgId}/events` | **org admin only** | any org member (server-side write) | `false` | `false` |
+
+**Audit log rule detail:** The `audit_logs` collection is nested as `audit_logs/{orgId}/events/{eventId}`. Read access requires the caller to be an org admin (checked via the org's `members` array). Writes are allowed for any authenticated org member (events are written from client code after privileged actions). Deletes are permanently disabled to preserve the audit trail.
 
 ---
 
@@ -1393,20 +1609,28 @@ WorkspaceContext.initWorkspace()
   → setLoading(false)
 ```
 
-### Document Hub — New Document
+### Document Hub — New Document (inline row)
 
 ```
-User clicks "New" in DocumentHub.jsx
-  → createNew mutation
-  → Page.create({ title:'Untitled', org_id, database_id, record_id:null,
-                  category:null, reviewers:[], is_deleted:false, is_template:false,
-                  created_by_email, created_by_name, last_edited_by_* })
-  → DatabaseRecord.create({ database_id, page_id:page.id, org_id,
-                             properties:{ title:'Untitled', category:null, reviewers:[] },
-                             created_by_*, last_edited_by_* })
-  → Page.update(page.id, { record_id: record.id })   ← back-link
-  → navigate('/page/<page.id>')
+User clicks "+ New document" in DocumentHub.jsx table footer
+  → setPendingRow(true) — mounts <PendingRow> as the last <tr>
+  → User types a title and presses Enter (or clicks away / Tab)
+  → PendingRow.commit() fires (guarded by committedRef to prevent double-fire on Enter+blur)
+  → handlePendingCommit(title):
+        setPendingRow(null)   ← dismiss immediately
+        if title is blank → return (no-op)
+        createRecord(title.trim()) — TanStack useMutation
+  → onMutate: cancel in-flight queries, snapshot cache, push optimistic record (id starts with "optimistic_")
+  → mutationFn: Page.create + DatabaseRecord.create + Page.update(record_id back-link)
+  → onError: restore snapshot from ctx.previous, toast.error(...)
+  → onSettled: invalidateQueries(['hub-records', dbId]) — replaces optimistic with real data
 ```
+
+**PendingRow component** (defined above `RecordsTable` in `DocumentHub.jsx`):
+- `committedRef` (useRef boolean) guards against double-commit when Enter fires `commit()` followed immediately by `onBlur` also firing `commit()`.
+- `onBlur={commit}` — clicking away **saves** the row (previously `onCancel`, which discarded it).
+- `onKeyDown`: Enter → `commit()`, Escape → `cancel()`.
+- `disabled={creating}` greys the input while the mutation is in-flight.
 
 ### Page Title Edit → Record Sync
 
@@ -1488,7 +1712,7 @@ User visits /shared/:token
 | Path | Component | Auth Required | Notes |
 |---|---|---|---|
 | `/login` | `Login` | No | |
-| `/register` | `Register` | No | Two-step: form + OTP |
+| `/register` | `Register` | No | Email + password + Google OAuth |
 | `/forgot-password` | `ForgotPassword` | No | |
 | `/reset-password` | `ResetPassword` | No | Requires `?token=` query param |
 | `/shared/:token` | `SharedPage` | No | Public read-only page viewer |
@@ -1498,17 +1722,15 @@ User visits /shared/:token
 | `/trash` | `Trash` | **Yes** | Soft-deleted pages |
 | `/settings` | `Settings` | **Yes** | Account / workspace / appearance |
 | `/templates` | `Templates` | **Yes** | Template gallery |
-| `/tasks` | `Tasks` | **Yes** | Task management (Board / Table / My Tasks) |
+| `/tasks` | `Tasks` | **Yes** | Task management (Board / Table / My Tasks / Workload) |
 | `/tickets` | `Tickets` | **Yes** | Support ticket list (F26) |
 | `/tickets/:ticketId` | `TicketDetail` | **Yes** | Full ticket detail + activity (F26) |
 | `/command-center` | `CommandCenter` | **Yes** | Real-time ops dashboard (F27) |
+| `/databases` | `Databases` | **Yes** | Database gallery + new database modal |
+| `/database/:dbId` | `DatabaseDetail` | **Yes** | Full database detail with all view modes |
 | `/document-hub` | `DocumentHub` | **Yes** | Notion-style document database hub (F28) |
-| `/document-hub/:databaseId` | `DocumentHub` | **Yes** | Same component; `:databaseId` used to fetch a specific DB directly (bypasses name lookup) |
+| `/document-hub/:databaseId` | `DocumentHub` | **Yes** | Same component; `:databaseId` used to fetch a specific DB directly |
 | `*` | `PageNotFound` | No | 404 fallback |
-
----
-
-*End of documentation.*
 
 ---
 
@@ -1624,3 +1846,133 @@ All `Page.create()` and `Page.update()` calls across the codebase wrap their pay
 - `Templates.jsx` — un-template action
 - `UseTemplateDialog.jsx` — template instantiation
 - `SaveAsTemplateDialog.jsx` — save-as-template action
+
+---
+
+## 24. Audit Log System
+
+The audit log system provides an immutable, admin-readable trail of privileged actions across the workspace.
+
+### `src/lib/auditLog.js`
+
+| Export | Description |
+|---|---|
+| `AUDIT_ACTIONS` | Const object of all known action identifiers (e.g. `AUDIT_ACTIONS.PAGE_LOCK = 'PAGE_LOCK'`) |
+| `AUDIT_ACTION_LABELS` | Human-readable label map `{ [action]: string }` used in `AuditLogTab` filter dropdown |
+| `logAuditEvent(orgId, event)` | Writes one event to Firestore; returns the document ref |
+| `fetchAuditPage(orgId, options)` | Reads a page of events; returns `{ events, lastDoc }` for cursor pagination |
+
+**`logAuditEvent(orgId, event)` payload:**
+
+```js
+{
+  action:      string,   // one of AUDIT_ACTIONS.*
+  actorEmail:  string,   // performing user's email
+  actorName:   string,   // performing user's display name
+  targetId?:   string,   // ID of the affected object (pageId, taskId, etc.)
+  targetTitle?: string,  // Human-readable title of the affected object
+  metadata?:   object,   // Action-specific extra data (e.g. { fromRole, toRole })
+  timestamp:   Timestamp // server-set via serverTimestamp()
+}
+```
+
+**Firestore path:** `audit_logs/{orgId}/events/{auto-id}`
+
+**`fetchAuditPage(orgId, options)` options:**
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | `25` | Max events per page |
+| `action` | string | `null` | Filter to a single action type |
+| `actorEmail` | string | `null` | Filter to a single actor |
+| `startAfter` | DocumentSnapshot | `null` | Firestore cursor for the next page |
+
+### Audit action catalogue
+
+| Action key | Fires in |
+|---|---|
+| `PAGE_LOCK` | `PageEditor.jsx` — lock page toggle |
+| `PAGE_UNLOCK` | `PageEditor.jsx` — unlock page toggle |
+| `PAGE_DELETE` | `PageEditor.jsx` — delete page |
+| `PAGE_PERMISSION_CHANGE` | `PageEditor.jsx` / `PagePermissionsDialog.jsx` |
+| `DB_PROPERTY_ADD` | `DatabaseDetail.jsx` — add property |
+| `DB_PROPERTY_EDIT` | `DatabaseDetail.jsx` — edit property |
+| `DB_PROPERTY_DELETE` | `DatabaseDetail.jsx` — delete property |
+| `MEMBER_INVITE` | `Settings.jsx` — invite member |
+| `MEMBER_REMOVE` | `Settings.jsx` — remove member |
+| `MEMBER_ROLE_CHANGE` | `Settings.jsx` — change member role |
+
+### `src/components/settings/AuditLogTab.jsx`
+
+Admin-only read view. See [Section 13](#13-shared--auth-ui-components) for component details.
+
+---
+
+## 25. Error Boundary System
+
+`src/components/ErrorBoundary.jsx` exports two React class components:
+
+### `TopLevelErrorBoundary`
+
+Full-page fallback rendered by `<Sentry.ErrorBoundary>` in `main.jsx`. Displays an `AlertTriangle` icon, a generic "Something went wrong" heading, a "Reload page" button, and (in dev only) the raw error message below the button.
+
+### `SectionErrorBoundary`
+
+Inline fallback for individual page sections. Wraps sub-trees that can be independently recovered without a full reload.
+
+**Props:**
+
+| Prop | Type | Description |
+|---|---|---|
+| `children` | ReactNode | The component tree to protect |
+| `name` | string (optional) | Section label shown in the fallback UI and Sentry reports |
+| `resetKey` | any (optional) | When this value changes, the boundary auto-resets via `getDerivedStateFromProps` |
+
+**Reset behaviour (resetKey pattern):**
+
+```
+Parent passes resetKey={pageId}
+  → User navigates to a different page → pageId changes
+  → getDerivedStateFromProps: new resetKey !== stored _resetKey
+  → returns { hasError: false, error: null, _resetKey: newKey }
+  → Boundary renders children again (no user action needed)
+```
+
+This is used in `App.jsx`'s `PageEditorRoute` and `DatabaseDetailRoute` wrappers so navigating between pages always gives a fresh boundary even if the previous page crashed.
+
+**Fallback UI:**
+
+```
+┌─────────────────────────────┐
+│   ▲  (AlertTriangle icon)   │
+│  "Page editor failed to load"│
+│  "Error message" (DEV only) │
+│  [Try again]                │
+│  Report issue               │  ← copies stack trace to clipboard
+└─────────────────────────────┘
+```
+
+**"Report issue" button** calls `this.copyStack()`:
+1. Tries `navigator.clipboard.writeText(stack)` (modern async API)
+2. Falls back to `document.execCommand('copy')` via a hidden textarea (for older browsers / iframes)
+
+**`componentDidCatch` StrictMode guard:**
+
+```js
+componentDidCatch(error, info) {
+  if (this.state.hasError) return; // ← prevents triple-logging in React StrictMode
+  console.error(...);
+  Sentry.captureException(error, { extra: { section: this.props.name, ... } });
+}
+```
+
+React StrictMode re-throws errors twice as part of its error recovery simulation. Without the guard, Sentry would receive duplicate reports for the same error.
+
+**Dev vs production behaviour:**
+
+| Condition | Error message visible? |
+|---|---|
+| `import.meta.env.DEV === true` | Yes — raw `error.message` shown in muted text |
+| Production build | No — only the generic section label is shown |
+
+*End of documentation.*

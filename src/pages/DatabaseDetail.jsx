@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -12,10 +13,14 @@ import {
 } from '@/components/ui/tabs';
 import {
   Table2, Columns3, List, LayoutGrid, Plus, ChevronDown,
-  Settings, MoreHorizontal, Trash2, ArrowLeft,
+  Settings, MoreHorizontal, Trash2, ArrowLeft, Pencil, Copy,
 } from 'lucide-react';
-import { Database, DatabaseRecord, DatabaseView } from '@/api/firestoreClient.js';
+import { Database, DatabaseRecord, DatabaseView, setDatabaseRowBody } from '@/api/firestoreClient.js';
+import { seedDatabaseViews } from '@/api/seedDocumentHub.js';
 import { useWorkspace } from '@/contexts/WorkspaceContext.jsx';
+import { logAuditEvent, AUDIT_ACTIONS } from '@/lib/auditLog';
+import { usePresence } from '@/hooks/usePresence';
+import { PresenceAvatars } from '@/components/PresenceAvatars';
 import { applyFilters, applySorts, genId } from '@/components/database/db-utils.js';
 import { VIEW_TYPES } from '@/components/database/db-constants.js';
 import FilterSortBar from '@/components/database/FilterSortBar.jsx';
@@ -24,6 +29,7 @@ import DatabaseTable from '@/components/database/DatabaseTable.jsx';
 import DatabaseBoard from '@/components/database/DatabaseBoard.jsx';
 import DatabaseGallery from '@/components/database/DatabaseGallery.jsx';
 import DatabaseList from '@/components/database/DatabaseList.jsx';
+import RowTemplatesModal from '@/components/database/RowTemplatesModal.jsx';
 import RecordModal from '@/components/database/RecordModal.jsx';
 
 const VIEW_ICONS = { table: Table2, board: Columns3, list: List, gallery: LayoutGrid };
@@ -31,9 +37,11 @@ const VIEW_ICONS = { table: Table2, board: Columns3, list: List, gallery: Layout
 export default function DatabaseDetail() {
   const { dbId }   = useParams();
   const navigate   = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc         = useQueryClient();
-  const { currentOrganization } = useWorkspace();
+  const { currentOrganization, user } = useWorkspace();
   const orgId = currentOrganization?.id;
+  const { viewers } = usePresence('database', dbId);
 
   // ── Data fetching ────────────────────────────────────────────────────────────
   const { data: database, isLoading: dbLoading } = useQuery({
@@ -50,8 +58,15 @@ export default function DatabaseDetail() {
 
   const { data: views = [], isLoading: viewsLoading } = useQuery({
     queryKey: ['db_views', dbId],
-    queryFn: () => DatabaseView.filter({ database_id: dbId }),
-    enabled: !!dbId,
+    queryFn: async () => {
+      let raw = await DatabaseView.filter({ database_id: dbId });
+      if (!raw.length) {
+        await seedDatabaseViews(dbId, orgId);
+        raw = await DatabaseView.filter({ database_id: dbId });
+      }
+      return [...raw].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    },
+    enabled: !!dbId && !!orgId,
   });
 
   // All databases (for relation property)
@@ -70,27 +85,34 @@ export default function DatabaseDetail() {
   const [addViewOpen, setAddViewOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameValue,     setNameValue]     = useState('');
+  const [renamingViewId, setRenamingViewId] = useState(null);
+  const [renameValue,    setRenameValue]    = useState('');
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
-  // Activate first view when views load
+  // Activate first view when views load (respecting ?view= URL param)
   useEffect(() => {
     if (views.length && !activeViewId) {
-      const first = views[0];
+      const paramViewId = searchParams.get('view');
+      const target = paramViewId ? views.find(v => v.id === paramViewId) : null;
+      const first = target ?? views[0];
       setActiveViewId(first.id);
       setLocalFilters(first.filters ?? []);
       setLocalSorts(first.sorts ?? []);
+      setSearchParams({ view: first.id }, { replace: true });
     }
   }, [views, activeViewId]);
 
   // ── Active view ──────────────────────────────────────────────────────────────
   const activeView = views.find(v => v.id === activeViewId) ?? views[0];
 
-  // When switching views, load saved filters/sorts
+  // When switching views, load saved filters/sorts and sync URL
   function switchView(viewId) {
     const v = views.find(v => v.id === viewId);
     if (!v) return;
     setActiveViewId(viewId);
     setLocalFilters(v.filters ?? []);
     setLocalSorts(v.sorts ?? []);
+    setSearchParams({ view: viewId }, { replace: true });
   }
 
   // ── Computed records ─────────────────────────────────────────────────────────
@@ -102,6 +124,7 @@ export default function DatabaseDetail() {
   const { mutate: updateDb } = useMutation({
     mutationFn: (data) => Database.update(dbId, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['database', dbId] }),
+    onError: () => toast.error('Failed to update database'),
   });
 
   const { mutate: deleteRecord } = useMutation({
@@ -110,11 +133,13 @@ export default function DatabaseDetail() {
       qc.invalidateQueries({ queryKey: ['records', dbId] });
       if (selectedRecord?.id === id) setSelectedRecord(null);
     },
+    onError: () => toast.error('Failed to delete record'),
   });
 
   const { mutate: saveView } = useMutation({
     mutationFn: ({ id, data }) => DatabaseView.update(id, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['db_views', dbId] }),
+    onError: () => toast.error('Failed to save view'),
   });
 
   const { mutate: createView } = useMutation({
@@ -122,19 +147,67 @@ export default function DatabaseDetail() {
     onSuccess: (v) => {
       qc.invalidateQueries({ queryKey: ['db_views', dbId] });
       setActiveViewId(v.id);
+      setLocalFilters([]);
+      setLocalSorts([]);
+      setSearchParams({ view: v.id }, { replace: true });
     },
+    onError: () => toast.error('Failed to create view'),
+  });
+
+  const { mutate: duplicateView } = useMutation({
+    mutationFn: (sourceView) => DatabaseView.create({
+      database_id: dbId,
+      name: `${sourceView.name} (copy)`,
+      type: sourceView.type,
+      filters: sourceView.filters ?? [],
+      sorts: sourceView.sorts ?? [],
+      hidden_props: sourceView.hidden_props ?? [],
+    }),
+    onSuccess: (newView) => {
+      qc.invalidateQueries({ queryKey: ['db_views', dbId] });
+      setActiveViewId(newView.id);
+      setLocalFilters(newView.filters ?? []);
+      setLocalSorts(newView.sorts ?? []);
+      setSearchParams({ view: newView.id }, { replace: true });
+    },
+    onError: () => toast.error('Failed to duplicate view'),
   });
 
   const { mutate: deleteView } = useMutation({
     mutationFn: (id) => DatabaseView.delete(id),
-    onSuccess: () => {
+    onSuccess: (_, deletedId) => {
       qc.invalidateQueries({ queryKey: ['db_views', dbId] });
-      if (activeViewId === id) {
-        const remaining = views.filter(v => v.id !== id);
+      if (activeViewId === deletedId) {
+        const remaining = views.filter(v => v.id !== deletedId);
         if (remaining.length) switchView(remaining[0].id);
       }
     },
+    onError: () => toast.error('Failed to delete view'),
   });
+
+  const { mutate: createRecordWithBody } = useMutation({
+    mutationFn: async ({ properties, body }) => {
+      const record = await DatabaseRecord.create({ database_id: dbId, properties });
+      if (Array.isArray(body) && body.length > 0) {
+        await setDatabaseRowBody(dbId, record.id, { body });
+      }
+      return record;
+    },
+    onSuccess: (record) => {
+      qc.invalidateQueries({ queryKey: ['records', dbId] });
+      qc.invalidateQueries({ queryKey: ['databaseRowBody', dbId, record.id] });
+      setSelectedRecord(record);
+    },
+    onError: () => toast.error('Failed to create record'),
+  });
+
+  const handleApplyTemplate = (template) => {
+    const titlePropId = schema.find((p) => p.type === 'title')?.id;
+    const props = { ...(template.properties ?? {}) };
+    if (titlePropId) delete props[titlePropId];
+    createRecordWithBody({ properties: props, body: template.body ?? [] });
+    setTemplatesOpen(false);
+  };
 
   // Auto-save filters/sorts when they change
   const handleFiltersChange = useCallback((newFilters) => {
@@ -147,21 +220,63 @@ export default function DatabaseDetail() {
     if (activeView?.id) saveView({ id: activeView.id, data: { sorts: newSorts } });
   }, [activeView, saveView]);
 
+  function handleRenameSubmit(viewId) {
+    const trimmed = renameValue.trim();
+    if (trimmed) saveView({ id: viewId, data: { name: trimmed } });
+    setRenamingViewId(null);
+  }
+
   // ── Schema editing ───────────────────────────────────────────────────────────
   function handleSaveProperty(updatedProp) {
     const idx = schema.findIndex(p => p.id === updatedProp.id);
     let newSchema;
-    if (idx >= 0) {
+    const isNew = idx < 0;
+    if (!isNew) {
       newSchema = schema.map((p, i) => i === idx ? updatedProp : p);
     } else {
       newSchema = [...schema, updatedProp];
     }
     updateDb({ schema: newSchema });
+    const existingProp = !isNew ? schema[idx] : null;
+    logAuditEvent(orgId, {
+      actorUid:    user?.uid,
+      actorName:   user?.full_name || user?.email,
+      action:      isNew ? AUDIT_ACTIONS.DB_PROP_ADD : AUDIT_ACTIONS.DB_PROP_EDIT,
+      entityType:  'database',
+      entityId:    dbId,
+      entityTitle: database?.name || 'Untitled database',
+      metadata: isNew
+        ? { propertyName: updatedProp.name, propertyType: updatedProp.type }
+        : {
+            propertyName: updatedProp.name,
+            propertyType: updatedProp.type,
+            renamedFrom: existingProp?.name !== updatedProp.name ? existingProp?.name : undefined,
+          },
+    });
   }
 
   function handleDeleteProperty(propId) {
     if (propId === schema.find(p => p.type === 'title')?.id) return; // Protect title
+    const prop = schema.find(p => p.id === propId);
     updateDb({ schema: schema.filter(p => p.id !== propId) });
+    logAuditEvent(orgId, {
+      actorUid:    user?.uid,
+      actorName:   user?.full_name || user?.email,
+      action:      AUDIT_ACTIONS.DB_PROP_DELETE,
+      entityType:  'database',
+      entityId:    dbId,
+      entityTitle: database?.name || 'Untitled database',
+      metadata:    { propertyName: prop?.name, propertyType: prop?.type },
+    });
+  }
+
+  function handleUpdateOptionColor(propId, optId, key, val) {
+    const newSchema = schema.map(p =>
+      p.id === propId
+        ? { ...p, options: (p.options ?? []).map(o => o.id === optId ? { ...o, [key]: val } : o) }
+        : p
+    );
+    updateDb({ schema: newSchema });
   }
 
   // ── Loading ──────────────────────────────────────────────────────────────────
@@ -217,46 +332,97 @@ export default function DatabaseDetail() {
               {database.name}
             </h1>
           )}
+          <PresenceAvatars viewers={viewers} className="ml-2" />
         </div>
 
         {/* View tabs + filter/sort bar */}
         <div className="flex items-center gap-3 flex-wrap">
           {/* View tabs */}
           <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-0.5">
-            {views.map(v => {
+            {views.map((v, idx) => {
               const Icon = VIEW_ICONS[v.type] ?? Table2;
+              const isActive = v.id === activeViewId;
+              const isDefault = idx === 0;
+              const isRenaming = renamingViewId === v.id;
+              const hasFilters = isActive
+                ? localFilters.length > 0
+                : (v.filters ?? []).length > 0;
               return (
                 <button
                   key={v.id}
-                  onClick={() => switchView(v.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-sm transition-colors ${
-                    v.id === activeViewId
+                  onClick={() => !isRenaming && switchView(v.id)}
+                  className={`group/tab relative flex items-center gap-1.5 px-3 py-1 rounded-md text-sm transition-colors ${
+                    isActive
                       ? 'bg-background shadow-sm font-medium'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  {v.name}
-                  {views.length > 1 && v.id === activeViewId && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          className="ml-1 hover:text-muted-foreground"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          <MoreHorizontal className="w-3 h-3" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuItem
-                          className="text-destructive gap-2"
-                          onClick={() => deleteView(v.id)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete view
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                  <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                  {isRenaming ? (
+                    <input
+                      autoFocus
+                      className="w-24 bg-transparent outline-none border-b border-primary text-sm"
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onBlur={() => handleRenameSubmit(v.id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleRenameSubmit(v.id);
+                        if (e.key === 'Escape') setRenamingViewId(null);
+                        e.stopPropagation();
+                      }}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span>{v.name}</span>
                   )}
+                  {hasFilters && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <span
+                        className="ml-0.5 opacity-0 group-hover/tab:opacity-100 transition-opacity inline-flex"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <MoreHorizontal className="w-3 h-3" />
+                      </span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setRenameValue(v.name);
+                          setRenamingViewId(v.id);
+                        }}
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onClick={e => {
+                          e.stopPropagation();
+                          duplicateView(v);
+                        }}
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Duplicate
+                      </DropdownMenuItem>
+                      {!isDefault && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="gap-2 text-destructive focus:text-destructive"
+                            onClick={e => {
+                              e.stopPropagation();
+                              deleteView(v.id);
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </button>
               );
             })}
@@ -286,6 +452,12 @@ export default function DatabaseDetail() {
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setTemplatesOpen(true)}>
+              Templates
+            </Button>
           </div>
 
           {/* Filter / sort bar */}
@@ -366,13 +538,22 @@ export default function DatabaseDetail() {
       {selectedRecord && (
         <RecordModal
           record={selectedRecord}
+          database={database}
           schema={schema}
           allRecords={records}
           allDatabases={allDatabases}
           onClose={() => setSelectedRecord(null)}
           onDelete={(id) => deleteRecord(id)}
+          onUpdateOption={(propId, optId, key, val) => handleUpdateOptionColor(propId, optId, key, val)}
         />
       )}
+
+      <RowTemplatesModal
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        databaseId={dbId}
+        onApply={handleApplyTemplate}
+      />
     </div>
   );
 }

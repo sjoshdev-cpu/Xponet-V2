@@ -5,6 +5,8 @@ import { Page } from '@/api/firestoreClient';
 import Sidebar from './Sidebar';
 import CommandPalette from './CommandPalette';
 import QuickAddTask from '@/components/tasks/QuickAddTask';
+import OfflineBanner from '@/components/OfflineBanner';
+import RetryIndicator from '@/components/RetryIndicator';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -89,6 +91,8 @@ export default function WorkspaceLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <OfflineBanner />
+      <RetryIndicator />
       {/* Mobile overlay */}
       {isMobile && sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setSidebarOpen(false)} />

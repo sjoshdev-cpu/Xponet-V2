@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { OPTION_COLOR_CLASSES } from './db-constants.js';
+import { OPTION_COLOR_CLASSES, colorHex, getOptionBadgeClasses, getOptionBadgeStyle } from './db-constants.js';
 import { computeRollup, evaluateFormula } from './db-utils.js';
 
 /**
@@ -41,8 +41,11 @@ function getDisplayValue({ prop, value, record, schema, allRecords }) {
       const opt = (prop.options ?? []).find(o => o.id === value);
       if (!opt) return null;
       return (
-        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${OPTION_COLOR_CLASSES[opt.color] ?? OPTION_COLOR_CLASSES.gray}`}>
-          {opt.label}
+        <span
+          className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${getOptionBadgeClasses(opt.color)}`}
+          style={getOptionBadgeStyle(opt.color)}
+        >
+          {opt.name ?? opt.label}
         </span>
       );
     }
@@ -55,8 +58,12 @@ function getDisplayValue({ prop, value, record, schema, allRecords }) {
             const opt = (prop.options ?? []).find(o => o.id === vid);
             if (!opt) return null;
             return (
-              <span key={vid} className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${OPTION_COLOR_CLASSES[opt.color] ?? OPTION_COLOR_CLASSES.gray}`}>
-                {opt.label}
+              <span
+                key={vid}
+                className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${getOptionBadgeClasses(opt.color)}`}
+                style={getOptionBadgeStyle(opt.color)}
+              >
+                {opt.name ?? opt.label}
               </span>
             );
           })}

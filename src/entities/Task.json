@@ -6,9 +6,30 @@
     "description": { "type": "string" },
     "status": { "type": "string", "enum": ["Backlog","To Do","In Progress","In Review","Done"], "default": "To Do" },
     "priority": { "type": "string", "enum": ["Low","Medium","High","Urgent"], "default": "Medium" },
-    "assignee_email": { "type": "string" },
-    "assignee_name": { "type": "string" },
+    "assignees": {
+      "type": "array",
+      "description": "Task assignees. Preferred over the legacy assignee_email/assignee_name fields below.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "assignee_emails": {
+      "type": "array",
+      "description": "Flat list of assignee emails, derived from assignees[]. Used for array-contains queries and security rules — kept in sync via lib/task-utils.js buildAssigneeFields().",
+      "items": { "type": "string" }
+    },
+    "assignee_email": { "type": "string", "description": "Deprecated — kept in sync with assignees[0] for backward compatibility." },
+    "assignee_name": { "type": "string", "description": "Deprecated — kept in sync with assignees[0] for backward compatibility." },
     "due_date": { "type": "string", "format": "date" },
+    "reminders_sent": {
+      "type": "array",
+      "description": "Markers like '1:2026-07-10' (offset_days:due_date) for reminders already sent, written by the Cloud Function. Prevents duplicate sends; do not edit from the client.",
+      "items": { "type": "string" }
+    },
     "effort": { "type": "string", "enum": ["XS","S","M","L","XL"] },
     "org_id": { "type": "string" },
     "page_id": { "type": "string" },

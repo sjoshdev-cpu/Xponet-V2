@@ -1,6 +1,6 @@
-// Shared column-header dropdown — shows Sort / Hide / Delete actions.
+// Shared column-header dropdown — shows Sort / Hide / Delete / Edit options actions.
 // Render only for non-fixed columns; caller decides which actions to expose.
-import { ChevronDown, EyeOff, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { ChevronDown, EyeOff, Trash2, ArrowUp, ArrowDown, Settings2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,12 +10,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 /**
- * @param {Function} [onHide]     – hide this column in the active view
- * @param {Function} [onDelete]   – permanently remove this property
- * @param {Function} [onSortAsc]  – sort ascending by this property
- * @param {Function} [onSortDesc] – sort descending by this property
+ * @param {Function} [onHide]        – hide this column in the active view
+ * @param {Function} [onDelete]      – permanently remove this property
+ * @param {Function} [onSortAsc]     – sort ascending by this property
+ * @param {Function} [onSortDesc]    – sort descending by this property
+ * @param {Function} [onEditOptions] – open the options editor for select/status columns
  */
-export default function ColumnHeaderDropdown({ onHide, onDelete, onSortAsc, onSortDesc }) {
+export default function ColumnHeaderDropdown({ onHide, onDelete, onSortAsc, onSortDesc, onEditOptions }) {
   const hasSorts = onSortAsc || onSortDesc;
 
   return (
@@ -43,6 +44,14 @@ export default function ColumnHeaderDropdown({ onHide, onDelete, onSortAsc, onSo
         )}
 
         {hasSorts && <DropdownMenuSeparator />}
+
+        {onEditOptions && (
+          <DropdownMenuItem onClick={onEditOptions} className="gap-2 text-xs">
+            <Settings2 className="w-3.5 h-3.5" /> Edit options
+          </DropdownMenuItem>
+        )}
+
+        {onEditOptions && (onHide || onDelete) && <DropdownMenuSeparator />}
 
         {onHide && (
           <DropdownMenuItem onClick={onHide} className="gap-2 text-xs">

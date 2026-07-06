@@ -4,13 +4,13 @@ import { getFirestore, setLogLevel } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyA7pRK0GeTT09PQ8Ui-nZYSoiqAqkB2Rpk",
+  authDomain: "xponet-f6f56.firebaseapp.com",
+  projectId: "xponet-f6f56",
+  storageBucket: "xponet-f6f56.firebasestorage.app",
+  messagingSenderId: "676894766537",
+  appId: "1:676894766537:web:941595a5d3c8155ca7e418",
+  measurementId: "G-3L5RKY7LYD",
 };
 
 const app = initializeApp(firebaseConfig);

@@ -1,0 +1,29 @@
+name: Task Due-Date Reminders
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # every hour, on the hour, UTC
+  workflow_dispatch: {}    # lets you trigger it manually from the Actions tab, for testing
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install firebase-admin nodemailer
+
+      - name: Send reminders
+        run: node scripts/send-task-reminders.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}

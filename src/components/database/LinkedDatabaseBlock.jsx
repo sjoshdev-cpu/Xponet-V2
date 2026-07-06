@@ -7,6 +7,7 @@ import {
 import { Database as DbIcon, Settings, ExternalLink, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Database, DatabaseRecord, DatabaseView } from '@/api/firestoreClient.js';
+import { seedDatabaseViews } from '@/api/seedDocumentHub.js';
 import { applyFilters, applySorts } from '@/components/database/db-utils.js';
 import { CellRenderer } from '@/components/database/CellRenderer.jsx';
 import { useWorkspace } from '@/contexts/WorkspaceContext.jsx';
@@ -39,8 +40,15 @@ export default function LinkedDatabaseBlock({ block, onChange, readOnly = false 
 
   const { data: views = [] } = useQuery({
     queryKey: ['db_views', block.database_id],
-    queryFn: () => DatabaseView.filter({ database_id: block.database_id }),
-    enabled: !!block.database_id,
+    queryFn: async () => {
+      let raw = await DatabaseView.filter({ database_id: block.database_id });
+      if (!raw.length) {
+        await seedDatabaseViews(block.database_id, orgId);
+        raw = await DatabaseView.filter({ database_id: block.database_id });
+      }
+      return [...raw].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    },
+    enabled: !!block.database_id && !!orgId,
   });
 
   const { data: records = [] } = useQuery({
@@ -88,7 +96,7 @@ export default function LinkedDatabaseBlock({ block, onChange, readOnly = false 
                 <SelectValue placeholder="Select a database..." />
               </SelectTrigger>
               <SelectContent>
-                {databases.map(db => (
+                {databases.filter(db => db?.id).map(db => (
                   <SelectItem key={db.id} value={db.id}>
                     {db.icon} {db.name}
                   </SelectItem>
@@ -108,7 +116,7 @@ export default function LinkedDatabaseBlock({ block, onChange, readOnly = false 
                   <SelectValue placeholder="Select view..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {views.map(v => (
+                  {views.filter(v => v?.id).map(v => (
                     <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
                   ))}
                 </SelectContent>

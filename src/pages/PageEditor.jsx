@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Page, Comment, DatabaseRecord, withLastEditedBy } from '@/api/firestoreClient';
+import { Page, Comment, DatabaseRecord, withLastEditedBy, addUserRecentPage } from '@/api/firestoreClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import BlockRenderer from '@/components/editor/BlockRenderer';
@@ -10,12 +10,13 @@ import PageOutline from '@/components/editor/PageOutline';
 import LinkedTasksPanel from '@/components/tasks/LinkedTasksPanel';
 import InlineCommentThread from '@/components/page/InlineCommentThread';
 import { usePresence } from '@/hooks/usePresence';
+import { PresenceAvatars } from '@/components/PresenceAvatars';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import {
   Star, Share2, MoreHorizontal, Lock, Unlock, Maximize, Minimize,
   Copy, Trash2, Download, ChevronRight, Image as ImageIcon, FolderOpen,
   PanelRight, X, ArrowUp, ArrowDown, Type, ClipboardList, Shield, ExternalLink, Calendar, Eye, LayoutTemplate,
-  Check, Loader2
+  Check, Loader2, MessageSquare, Sparkles, ChevronDown, Code, Table2 as TableIcon
 } from 'lucide-react';
 
 // Memoized BlockRenderer — only re-renders when the block itself, selection, or drag state changes.
@@ -46,6 +47,7 @@ import { formatDistanceToNow } from 'date-fns';
 import _ from 'lodash';
 import CoverImage from '@/components/editor/CoverImage';
 import CommentsSection from '@/components/page/CommentsSection';
+import { TemplatePickerModal } from '@/components/templates/TemplatePickerModal';
 import FloatingToolbar from '@/components/editor/FloatingToolbar';
 import FileUploadButton from '@/components/ui/FileUploadButton';
 import UploadedFilePreview from '@/components/ui/UploadedFilePreview';
@@ -53,6 +55,10 @@ import PagePermissionsDialog, { resolvePageRole } from '@/components/page/PagePe
 import SaveAsTemplateDialog from '@/components/templates/SaveAsTemplateDialog';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { InlineRefDropdown } from '@/components/editor/InlineRefDropdown';
+import { LinkedFromSection } from '@/components/page/LinkedFromSection';
+import { syncBacklinks, extractPageRefsFromBlocks } from '@/api/firestoreClient';
+import { logAuditEvent, AUDIT_ACTIONS } from '@/lib/auditLog';
 
 function generateId() {
   return Math.random().toString(36).substr(2, 9);
@@ -83,7 +89,6 @@ export default function PageEditor() {
     email: m.email,
     name: m.full_name || m.email,
   }));
-  const { viewers } = usePresence(pageId);
 
   // Inline comments: fetch all page comments for block indicators
   const { data: pageComments = [] } = useQuery({
@@ -118,12 +123,21 @@ export default function PageEditor() {
   const [shareExpiry, setShareExpiry] = useState('');
   const [sharePassword, setSharePassword] = useState('');
   const [sharePasswordChanged, setSharePasswordChanged] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [quickStartMore, setQuickStartMore] = useState(false);
+  // Inline reference picker (@mention / [[page-link)
+  const [inlinePicker, setInlinePicker] = useState(null); // { type, query, rect, savedRange } | null
+  const [hoveredPageRef, setHoveredPageRef] = useState(null); // { pageId, title, icon, rect } | null
+  const inlinePickerRef = useRef(null);
+  const outgoingRefsRef = useRef([]);
   const titleRef = useRef(null);
   const slashBlockWasEmptyRef = useRef(false);
   const lastSelectedRef = useRef(null);
 
   // --- F21: Save status & performance refs ---
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const { viewers } = usePresence('page', pageId, saveStatus === 'saving' ? 'editing' : 'viewing');
   const [conflictDetected, setConflictDetected] = useState(false);
   // Track whether user has unsaved local edits (prevents remote refetch from overwriting them)
   const isDirtyRef = useRef(false);
@@ -185,6 +199,10 @@ export default function PageEditor() {
   useEffect(() => { iconValRef.current = icon; });
   useEffect(() => { userValRef.current = user; });
   useEffect(() => { slashBlockIdRef.current = slashBlockId; }, [slashBlockId]);
+  // Initialise outgoing refs ref from page data (reset on page navigation)
+  useEffect(() => {
+    outgoingRefsRef.current = page?.outgoing_refs || [];
+  }, [page?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!page) return;
@@ -210,7 +228,7 @@ export default function PageEditor() {
     setTitle(page.title || '');
     setIcon(page.icon || '📄');
     try {
-      const parsed = JSON.parse(page.content || '[]');
+      const parsed = normalizeBlocks(JSON.parse(page.content || '[]'));
       setBlocks(parsed.length > 0 ? parsed : [{ id: generateId(), type: 'paragraph', content: '' }]);
     } catch {
       setBlocks([{ id: generateId(), type: 'paragraph', content: '' }]);
@@ -220,6 +238,11 @@ export default function PageEditor() {
       : page.updated_at ? new Date(page.updated_at) : null;
     lastSyncedAtRef.current = remoteAt;
   }, [page]);
+
+  useEffect(() => {
+    if (!page?.id || !user?.uid) return;
+    addUserRecentPage(user.uid, page.id).catch(() => {});
+  }, [page?.id, user?.uid]);
 
   const saveMutation = useMutation({
     mutationFn: async (data) => {
@@ -233,6 +256,30 @@ export default function PageEditor() {
           last_edited_by_email: data.last_edited_by_email ?? user?.email ?? '',
           last_edited_by_name: data.last_edited_by_name ?? user?.full_name ?? user?.email ?? '',
         });
+      }
+      // Backlink sync — update referenced pages' backlinks subcollections
+      if ('content' in data) {
+        try {
+          const newBlocks = JSON.parse(data.content || '[]');
+          const newRefIds = extractPageRefsFromBlocks(newBlocks);
+          const prevRefIds = outgoingRefsRef.current;
+          const added = newRefIds.filter((id) => !prevRefIds.includes(id));
+          const removed = prevRefIds.filter((id) => !newRefIds.includes(id));
+          if (added.length > 0 || removed.length > 0) {
+            await syncBacklinks({
+              sourcePageId: pageId,
+              sourceTitle: data.title ?? titleValRef.current ?? '',
+              sourceIcon: iconValRef.current ?? '📄',
+              addedTargetIds: added,
+              removedTargetIds: removed,
+            });
+            outgoingRefsRef.current = newRefIds;
+            // Persist outgoing_refs on the source page (fire-and-forget)
+            Page.update(pageId, { outgoing_refs: newRefIds }).catch(() => {});
+          }
+        } catch (err) {
+          console.warn('Backlink sync failed:', err);
+        }
       }
     },
     onSuccess: () => {
@@ -271,6 +318,21 @@ export default function PageEditor() {
       icon: ic,
       search_text: blocksToSearchText(t, b),
     }, u);
+  }, []);
+
+  const normalizeBlocks = useCallback((blocksArr) => {
+    const normalized = [];
+    for (let i = 0; i < blocksArr.length; i += 1) {
+      const block = blocksArr[i];
+      normalized.push(block);
+      if (block?.type === 'database-embed') {
+        const next = blocksArr[i + 1];
+        if (!next || next.type !== 'paragraph') {
+          normalized.push({ id: generateId(), type: 'paragraph', content: '' });
+        }
+      }
+    }
+    return normalized;
   }, []);
 
   // Stable updateBlocks — used by bulk operations
@@ -352,7 +414,7 @@ export default function PageEditor() {
             last_edited_by_email: userValRef.current?.email || '',
           });
         },
-        onAddAfter: () => {
+        onAddAfter: (options = {}) => {
           isDirtyRef.current = true;
           const prev = blocksRef.current;
           const idx = prev.findIndex(b => b.id === blockId);
@@ -369,6 +431,52 @@ export default function PageEditor() {
             last_edited_by_name: userValRef.current?.full_name || userValRef.current?.email || '',
             last_edited_by_email: userValRef.current?.email || '',
           });
+          if (options.focus) {
+            setTimeout(() => {
+              const editableEl = document.querySelector(`[data-block-id="${newBlock.id}"] [contenteditable]`);
+              if (editableEl) {
+                editableEl.focus();
+                const range = document.createRange();
+                const sel = window.getSelection();
+                range.setStart(editableEl, 0);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            }, 0);
+          }
+        },
+        onAddBefore: (options = {}) => {
+          isDirtyRef.current = true;
+          const prev = blocksRef.current;
+          const idx = prev.findIndex(b => b.id === blockId);
+          const newBlock = { id: generateId(), type: 'paragraph', content: '' };
+          const next = [...prev];
+          next.splice(idx, 0, newBlock);
+          blocksRef.current = next;
+          setBlocks(next);
+          debouncedSaveRef.current({
+            content: JSON.stringify(next),
+            title: titleValRef.current,
+            icon: iconValRef.current,
+            search_text: blocksToSearchText(titleValRef.current, next),
+            last_edited_by_name: userValRef.current?.full_name || userValRef.current?.email || '',
+            last_edited_by_email: userValRef.current?.email || '',
+          });
+          if (options.focus) {
+            setTimeout(() => {
+              const editableEl = document.querySelector(`[data-block-id="${newBlock.id}"] [contenteditable]`);
+              if (editableEl) {
+                editableEl.focus();
+                const range = document.createRange();
+                const sel = window.getSelection();
+                range.setStart(editableEl, 0);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            }, 0);
+          }
         },
         onMoveUp: () => {
           isDirtyRef.current = true;
@@ -461,15 +569,37 @@ export default function PageEditor() {
     const prev = blocksRef.current;
     const idx = prev.findIndex(b => b.id === blockId);
     if (idx < 0) { setSlashMenu(null); setSlashBlockId(null); return; }
+
+    // Map inline-database shorthand types → database-embed block
+    const DB_VIEW_MAP = { 'db-table': 'table', 'db-board': 'board', 'db-gallery': 'gallery', 'db-list': 'list' };
+    const isDbEmbed = type in DB_VIEW_MAP;
+    const actualType = isDbEmbed ? 'database-embed' : type;
+
     const extras = {
-      ...(type === 'callout' ? { emoji: '💡', color: 'blue' } : {}),
-      ...(type === 'todo' ? { checked: false } : {}),
+      ...(actualType === 'callout' ? { emoji: '💡', color: 'blue' } : {}),
+      ...(actualType === 'todo' ? { checked: false } : {}),
+      ...(actualType === 'table' ? {
+        rows: [
+          ['Header 1', 'Header 2', 'Header 3'],
+          ['', '', ''],
+          ['', '', ''],
+        ],
+        colWidths: [150, 150, 150],
+      } : {}),
+      ...(isDbEmbed ? { databaseId: null, defaultView: DB_VIEW_MAP[type] } : {}),
     };
     const next = [...prev];
+    const nextBlock = prev[idx + 1];
     if (slashBlockWasEmptyRef.current) {
-      next[idx] = { ...next[idx], type, content: '', ...extras };
+      next[idx] = { ...next[idx], type: actualType, content: '', ...extras };
+      if (isDbEmbed && (!nextBlock || nextBlock.type !== 'paragraph')) {
+        next.splice(idx + 1, 0, { id: generateId(), type: 'paragraph', content: '' });
+      }
     } else {
-      next.splice(idx + 1, 0, { id: generateId(), type, content: '', ...extras });
+      next.splice(idx + 1, 0, { id: generateId(), type: actualType, content: '', ...extras });
+      if (isDbEmbed && (!nextBlock || nextBlock.type !== 'paragraph')) {
+        next.splice(idx + 2, 0, { id: generateId(), type: 'paragraph', content: '' });
+      }
     }
     blocksRef.current = next;
     setBlocks(next);
@@ -483,6 +613,81 @@ export default function PageEditor() {
     });
     setSlashMenu(null);
     setSlashBlockId(null);
+  }, []);
+
+  /**
+   * Called by BlockRenderer's onInput delegation whenever @ or [[ is typed.
+   * info = { type, query, rect } | null
+   */
+  const handleTrigger = useCallback((info) => {
+    if (!info) {
+      setInlinePicker(null);
+      inlinePickerRef.current = null;
+      return;
+    }
+
+    // In the page editor, @ should trigger page-link autocomplete.
+    // Preserve [[ page-link behavior too.
+    let triggerLen = 2;
+    if (info.type === 'mention') {
+      info = { ...info, type: 'page-link' };
+      triggerLen = 1;
+    }
+
+    // Same trigger type — just update query + rect, keep the saved selection range
+    if (inlinePickerRef.current?.type === info.type) {
+      const updated = { ...inlinePickerRef.current, query: info.query, rect: info.rect };
+      inlinePickerRef.current = updated;
+      setInlinePicker({ ...updated });
+      return;
+    }
+    // New trigger — save the current caret range so we can replace the trigger text on selection
+    const sel = window.getSelection();
+    const savedRange = sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    const newPicker = { type: info.type, query: info.query, rect: info.rect, savedRange, triggerLen };
+    inlinePickerRef.current = newPicker;
+    setInlinePicker({ ...newPicker });
+  }, []);
+
+  /**
+   * Called when the user selects an item from InlineRefDropdown.
+   * Replaces the trigger+query text with an inline chip via execCommand('insertHTML').
+   */
+  const handleInlineRefSelect = useCallback((item) => {
+    const picker = inlinePickerRef.current;
+    if (!picker) return;
+
+    let chipHtml;
+    if (picker.type === 'mention') {
+      const name = item.name || item.email;
+      const safeName = name.replace(/"/g, '&quot;');
+      chipHtml = `<span data-ref-type="mention" data-email="${item.email}" data-name="${safeName}" contenteditable="false" class="inline-mention">@${name}</span>\u00a0`;
+    } else {
+      const title = (item.title || 'Untitled').replace(/"/g, '&quot;');
+      chipHtml = `<a data-ref-type="page-ref" data-page-id="${item.id}" data-title="${title}" href="/page/${item.id}" contenteditable="false" class="inline-page-ref">${item.icon || '\ud83d\udcc4'}\u00a0${item.title || 'Untitled'}</a>\u00a0`;
+    }
+
+    // Re-select the trigger + query text so execCommand replaces it
+    const { savedRange, query, triggerLen } = picker;
+    if (savedRange) {
+      try {
+        const sel = window.getSelection();
+        const len = triggerLen ?? 2;
+        const { startContainer, startOffset } = savedRange;
+        const newRange = document.createRange();
+        newRange.setStart(startContainer, Math.max(0, startOffset - len));
+        newRange.setEnd(startContainer, Math.min(startOffset + (query || '').length, startContainer.length ?? Infinity));
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      } catch (_) {
+        // If range manipulation fails, insert at current caret position
+      }
+    }
+
+    document.execCommand('insertHTML', false, chipHtml); // eslint-disable-line no-document-write
+
+    setInlinePicker(null);
+    inlinePickerRef.current = null;
   }, []);
 
   const clearSelection = useCallback(() => setSelectedBlocks(new Set()), []);
@@ -581,8 +786,17 @@ export default function PageEditor() {
   };
 
   const toggleLock = () => {
-    saveMutation.mutate(withLastEditedBy({ is_locked: !page?.is_locked }, user));
-    toast(page?.is_locked ? 'Page unlocked' : 'Page locked');
+    const willLock = !page?.is_locked;
+    saveMutation.mutate(withLastEditedBy({ is_locked: willLock }, user));
+    toast(willLock ? 'Page locked' : 'Page unlocked');
+    logAuditEvent(currentOrg?.id, {
+      actorUid:    user?.uid,
+      actorName:   user?.full_name || user?.email,
+      action:      willLock ? AUDIT_ACTIONS.PAGE_LOCK : AUDIT_ACTIONS.PAGE_UNLOCK,
+      entityType:  'page',
+      entityId:    pageId,
+      entityTitle: page?.title || 'Untitled',
+    });
   };
 
   const toggleFullWidth = () => {
@@ -591,6 +805,14 @@ export default function PageEditor() {
 
   const handleDelete = () => {
     saveMutation.mutate(withLastEditedBy({ is_deleted: true, deleted_at: new Date().toISOString() }, user));
+    logAuditEvent(currentOrg?.id, {
+      actorUid:    user?.uid,
+      actorName:   user?.full_name || user?.email,
+      action:      AUDIT_ACTIONS.PAGE_DELETE,
+      entityType:  'page',
+      entityId:    pageId,
+      entityTitle: page?.title || 'Untitled',
+    });
     navigate('/');
   };
 
@@ -657,6 +879,37 @@ export default function PageEditor() {
           onClose={() => setLinkedTasksOpen(false)}
         />
       )}
+      {/* Comments side panel */}
+      {commentsOpen && (
+        <div className="fixed right-0 top-0 h-full w-80 bg-background border-l border-border shadow-lg z-30 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <h2 className="text-sm font-semibold">Comments</h2>
+            <button
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setCommentsOpen(false)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <CommentsSection pageId={pageId} orgId={currentOrg?.id} members={members} />
+          </div>
+        </div>
+      )}
+      {/* Template picker */}
+      <TemplatePickerModal
+        open={templatePickerOpen}
+        onClose={() => setTemplatePickerOpen(false)}
+        onSelect={async (tpl) => {
+          if (tpl.blocks?.length) {
+            const mapped = tpl.blocks.map(b => ({ ...b, id: `${Date.now()}-${Math.random()}` }));
+            setBlocks(mapped);
+          }
+          if (tpl.title && (!title || title === 'Untitled')) updateTitle(tpl.title);
+          if (tpl.icon) updateIcon(tpl.icon);
+          setTemplatePickerOpen(false);
+        }}
+      />
       {activeBlockComment && (
         <InlineCommentThread
           blockId={activeBlockComment}
@@ -710,19 +963,7 @@ export default function PageEditor() {
           {/* Actions */}
           <div className="flex items-center gap-1 shrink-0">
             {/* Viewer presence avatars */}
-            {viewers.length > 0 && (
-              <div className="flex items-center -space-x-2 mr-1">
-                {viewers.slice(0, 4).map((v) => (
-                  <span
-                    key={v.uid}
-                    title={`${v.name || v.email} is viewing`}
-                    className="h-6 w-6 rounded-full bg-primary/20 border-2 border-background flex items-center justify-center text-[10px] font-bold text-primary"
-                  >
-                    {(v.name || v.email || '?').charAt(0).toUpperCase()}
-                  </span>
-                ))}
-              </div>
-            )}
+            <PresenceAvatars viewers={viewers} className="mr-1" />
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={toggleFavorite}>
               <Star className={cn('h-4 w-4', page.is_favorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
             </Button>
@@ -740,6 +981,15 @@ export default function PageEditor() {
               title="Linked tasks"
             >
               <ClipboardList className="h-4 w-4 text-muted-foreground" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('h-7 w-7', commentsOpen && 'bg-accent')}
+              onClick={() => setCommentsOpen((v) => !v)}
+              title="Comments"
+            >
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
             </Button>
             <Button
               variant="ghost"
@@ -827,7 +1077,30 @@ export default function PageEditor() {
       </div>
 
       {/* Page content */}
-      <div className={cn('px-6 py-8 page-content', isFullWidth ? 'max-w-full px-12' : 'max-w-[900px] mx-auto')}>
+      <div
+        className={cn('px-6 page-content', isFullWidth ? 'max-w-full px-12' : 'max-w-[900px] mx-auto')}
+        style={{ paddingTop: page.cover_url ? '2rem' : '5rem' }}
+        onMouseOver={(e) => {
+          let el = e.target;
+          while (el && el !== e.currentTarget) {
+            if (el.getAttribute?.('data-ref-type') === 'page-ref') {
+              const rect = el.getBoundingClientRect();
+              const refPageId = el.getAttribute('data-page-id');
+              const refPage = allPages.find((p) => p.id === refPageId);
+              setHoveredPageRef({
+                pageId: refPageId,
+                title: el.getAttribute('data-title') || refPage?.title || 'Untitled',
+                icon: refPage?.icon || '📄',
+                rect,
+              });
+              return;
+            }
+            el = el.parentElement;
+          }
+          setHoveredPageRef(null);
+        }}
+        onMouseLeave={() => setHoveredPageRef(null)}
+      >
         {/* Conflict banner */}
         {conflictDetected && (
           <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-orange-500/10 border border-orange-500/30 rounded-lg text-sm text-orange-700 dark:text-orange-400">
@@ -858,23 +1131,37 @@ export default function PageEditor() {
           </div>
         )}
 
-        {/* Add cover button */}
-        {!page.cover_url && !page.is_locked && !isViewer && (
-          <div className="flex gap-2 mb-2 group-hover:opacity-100 opacity-0 hover:opacity-100 transition-opacity">
-            <button
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-accent transition-colors"
-              onClick={() => updateCover({ cover_url: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', cover_position: 50 })}
-            >
-              <ImageIcon className="h-3.5 w-3.5" /> Add cover
-            </button>
-          </div>
-        )}
-        {/* Icon */}
-        <EmojiPicker onSelect={updateIcon}>
-          <button className="text-5xl mb-2 hover:opacity-80 transition-opacity cursor-pointer">
-            {icon}
-          </button>
-        </EmojiPicker>
+        {/* ── Page header hover area: ghost "Add icon" / "Add cover" buttons ── */}
+        <div className="group/hdr">
+          {/* Ghost action row — fades in when hovering the header zone */}
+          {!page.is_locked && !isViewer && (!page.cover_url || !icon || icon === '📄') && (
+            <div className="flex gap-1 mb-2 opacity-0 group-hover/hdr:opacity-100 transition-opacity duration-150">
+              {(!icon || icon === '📄') && (
+                <EmojiPicker onSelect={updateIcon}>
+                  <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-accent transition-colors">
+                    <span className="text-sm leading-none">😊</span> Add icon
+                  </button>
+                </EmojiPicker>
+              )}
+              {!page.cover_url && (
+                <button
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-accent transition-colors"
+                  onClick={() => updateCover({ cover_url: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', cover_position: 50 })}
+                >
+                  <ImageIcon className="h-3.5 w-3.5" /> Add cover
+                </button>
+              )}
+            </div>
+          )}
+          {/* Icon display — custom emoji or nothing */}
+          {icon && icon !== '📄' ? (
+            <EmojiPicker onSelect={updateIcon}>
+              <button className="text-5xl mb-3 hover:opacity-80 transition-opacity cursor-pointer">
+                {icon}
+              </button>
+            </EmojiPicker>
+          ) : null}
+        </div>
 
         {/* Title */}
         <input
@@ -883,9 +1170,10 @@ export default function PageEditor() {
           onChange={(e) => updateTitle(e.target.value)}
           placeholder="Untitled"
           className={cn(
-            'w-full text-4xl font-bold bg-transparent border-0 outline-none placeholder:text-muted-foreground/40 mb-6',
+            'w-full font-bold bg-transparent border-0 outline-none placeholder:text-muted-foreground/30 mb-6',
             fontStyle === 'serif' ? 'font-serif' : fontStyle === 'mono' ? 'font-mono' : 'font-sans'
           )}
+          style={{ fontSize: '3rem', lineHeight: 1.15 }}
           disabled={page.is_locked || isViewer}
         />
 
@@ -971,6 +1259,7 @@ export default function PageEditor() {
                               isDragging={draggableSnapshot.isDragging}
                               commentCount={blockCommentCounts[block.id] || 0}
                               onCommentClick={handleCommentClick}
+                              onTrigger={handleTrigger}
                             />
                           )}
                         </Draggable>
@@ -1020,8 +1309,150 @@ export default function PageEditor() {
           </div>
         )}
 
-        {/* Comments */}
-        <CommentsSection pageId={pageId} orgId={currentOrg?.id} members={members} />
+        {/* ── Quick-start bar (Notion-style, only on blank pages) ─────────────── */}
+        {!page.is_locked && !isViewer &&
+          blocks.length === 1 && blocks[0]?.type === 'paragraph' && !blocks[0]?.content && (
+          <div className="mt-10 mb-2">
+            {/* separator */}
+            <div className="border-t border-border/50 mb-4" />
+            <div className="flex flex-col items-center gap-3">
+              {/* Primary pill row */}
+              <div className="flex flex-wrap justify-center gap-2">
+                {/* Ask AI */}
+                <button
+                  className="flex items-center gap-2 text-sm px-4 py-2 rounded-full border border-border bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground hover:bg-accent hover:border-primary/30 transition-all shadow-sm"
+                  onClick={() => {
+                    // Focus first block so user can start typing
+                    setTimeout(() => {
+                      document.querySelector('[data-block-id] [contenteditable]')?.focus();
+                    }, 0);
+                  }}
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-violet-400" />
+                  Ask AI
+                </button>
+                {/* Database */}
+                <button
+                  className="flex items-center gap-2 text-sm px-4 py-2 rounded-full border border-border bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground hover:bg-accent hover:border-primary/30 transition-all shadow-sm"
+                  onClick={() => {
+                    isDirtyRef.current = true;
+                    setBlocks(prev => [
+                      { id: generateId(), type: 'database-embed', databaseId: null, defaultView: 'table', content: '' },
+                      { id: generateId(), type: 'paragraph', content: '' },
+                      ...prev.slice(1),
+                    ]);
+                  }}
+                >
+                  <span className="text-base leading-none">🗄️</span>
+                  Database
+                </button>
+                {/* Form */}
+                <button
+                  className="flex items-center gap-2 text-sm px-4 py-2 rounded-full border border-border bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground hover:bg-accent hover:border-primary/30 transition-all shadow-sm"
+                  onClick={() => {
+                    isDirtyRef.current = true;
+                    setBlocks(prev => [
+                      { id: generateId(), type: 'callout', emoji: '📝', color: 'gray', content: 'Form block — coming soon', },
+                      ...prev.slice(1),
+                    ]);
+                  }}
+                >
+                  <span className="text-base leading-none">📝</span>
+                  Form
+                </button>
+                {/* Templates */}
+                <button
+                  className="flex items-center gap-2 text-sm px-4 py-2 rounded-full border border-border bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground hover:bg-accent hover:border-primary/30 transition-all shadow-sm"
+                  onClick={() => setTemplatePickerOpen(true)}
+                >
+                  <span className="text-base leading-none">🎨</span>
+                  Templates
+                </button>
+                {/* More toggle */}
+                <button
+                  className={cn(
+                    'flex items-center gap-1.5 text-sm px-4 py-2 rounded-full border border-border bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-foreground hover:bg-accent hover:border-primary/30 transition-all shadow-sm',
+                    quickStartMore && 'bg-accent border-primary/30 text-foreground'
+                  )}
+                  onClick={() => setQuickStartMore(v => !v)}
+                >
+                  <span className="tracking-widest text-xs">•••</span>
+                  More
+                  <ChevronDown className={cn('h-3 w-3 transition-transform', quickStartMore && 'rotate-180')} />
+                </button>
+              </div>
+
+              {/* Expanded "More" row */}
+              {quickStartMore && (
+                <div className="flex flex-wrap justify-center gap-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                  {/* Import */}
+                  <button
+                    className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border border-border/70 bg-background/60 text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = '*/*';
+                      input.onchange = (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        isDirtyRef.current = true;
+                        setBlocks(prev => [
+                          { id: generateId(), type: 'paragraph', content: `📎 ${file.name}` },
+                          ...prev.slice(1),
+                        ]);
+                      };
+                      input.click();
+                    }}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" /> Import
+                  </button>
+                  {/* Table */}
+                  <button
+                    className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border border-border/70 bg-background/60 text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    onClick={() => {
+                      isDirtyRef.current = true;
+                      setBlocks(prev => [
+                        { id: generateId(), type: 'table', rows: [['Header 1','Header 2','Header 3'],['','',''],['','','']], colWidths: [150,150,150], content: '' },
+                        ...prev.slice(1),
+                      ]);
+                    }}
+                  >
+                    <TableIcon className="h-3.5 w-3.5" /> Table
+                  </button>
+                  {/* Image */}
+                  <button
+                    className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border border-border/70 bg-background/60 text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    onClick={() => {
+                      isDirtyRef.current = true;
+                      setBlocks(prev => [
+                        { id: generateId(), type: 'image', content: '' },
+                        ...prev.slice(1),
+                      ]);
+                    }}
+                  >
+                    <ImageIcon className="h-3.5 w-3.5" /> Image
+                  </button>
+                  {/* Code block */}
+                  <button
+                    className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border border-border/70 bg-background/60 text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+                    onClick={() => {
+                      isDirtyRef.current = true;
+                      setBlocks(prev => [
+                        { id: generateId(), type: 'code', content: '' },
+                        ...prev.slice(1),
+                      ]);
+                    }}
+                  >
+                    <Code className="h-3.5 w-3.5" /> Code block
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Linked from (backlinks) */}
+        <LinkedFromSection pageId={pageId} />
       </div>
 
       {/* Slash menu */}
@@ -1031,6 +1462,35 @@ export default function PageEditor() {
           onSelect={handleSlashSelect}
           onClose={() => { setSlashMenu(null); setSlashBlockId(null); }}
         />
+      )}
+
+      {/* Inline reference picker (@mention / [[page-link) */}
+      {inlinePicker && (
+        <InlineRefDropdown
+          type={inlinePicker.type}
+          query={inlinePicker.query}
+          position={inlinePicker.rect}
+          pages={allPages.filter((p) => !p.is_deleted && !p.is_template && p.id !== pageId)}
+          members={members}
+          onSelect={handleInlineRefSelect}
+          onClose={() => { setInlinePicker(null); inlinePickerRef.current = null; }}
+        />
+      )}
+
+      {/* Page-ref hover tooltip */}
+      {hoveredPageRef && (
+        <div
+          className="page-ref-tooltip fixed z-50 bg-popover border border-border rounded-lg shadow-lg p-3 w-56 pointer-events-none"
+          style={{ top: hoveredPageRef.rect.bottom + 8, left: hoveredPageRef.rect.left }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xl shrink-0">{hoveredPageRef.icon}</span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{hoveredPageRef.title}</p>
+              <p className="text-xs text-muted-foreground">Click to open</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Move to dialog */}
@@ -1254,6 +1714,20 @@ export default function PageEditor() {
           await Page.update(pageId, withLastEditedBy(updates, user));
           queryClient.invalidateQueries({ queryKey: ['page', pageId] });
           queryClient.invalidateQueries({ queryKey: ['pages'] });
+          // Build a summary of the permission changes for the audit log
+          const grantedEmails = (updates.permissions || []).map((p) => `${p.email}:${p.role}`).join(', ');
+          logAuditEvent(currentOrg?.id, {
+            actorUid:    user?.uid,
+            actorName:   user?.full_name || user?.email,
+            action:      AUDIT_ACTIONS.PAGE_PERM_UPDATED,
+            entityType:  'page',
+            entityId:    pageId,
+            entityTitle: page?.title || 'Untitled',
+            metadata:    {
+              permSummary: grantedEmails || 'no explicit permissions',
+              inheritPermissions: updates.inherit_permissions,
+            },
+          });
           toast.success('Permissions saved');
         }}
       />

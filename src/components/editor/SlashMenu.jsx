@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Type, Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare,
-  Code, Quote, Image, Minus, Zap, ToggleLeft, Columns, LayoutGrid, Table2,
-  AlignLeft, Database as DbIcon
+  Code, Quote, Image, Video, FileText, Globe, Minus, Zap, ToggleLeft,
+  Columns, LayoutGrid, Table2, AlignLeft, Database as DbIcon,
+  Columns3, GalleryHorizontal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -10,28 +11,40 @@ const RECENT_KEY = 'xponet_recent_blocks';
 const MAX_RECENT = 5;
 
 const BLOCK_DEFS = [
-  { type: 'paragraph',  label: 'Text',             icon: Type,        desc: 'Start writing',          shortcut: '/text',    cat: 'basic',    kw: ['p', 'paragraph', 'plain'] },
-  { type: 'heading1',   label: 'Heading 1',         icon: Heading1,    desc: 'Large section title',    shortcut: '/h1',      cat: 'headings', kw: ['h1', 'title', 'header', 'big'] },
-  { type: 'heading2',   label: 'Heading 2',         icon: Heading2,    desc: 'Medium sub-heading',     shortcut: '/h2',      cat: 'headings', kw: ['h2', 'subtitle', 'medium'] },
-  { type: 'heading3',   label: 'Heading 3',         icon: Heading3,    desc: 'Small sub-heading',      shortcut: '/h3',      cat: 'headings', kw: ['h3', 'small'] },
-  { type: 'bullet',     label: 'Bullet List',       icon: List,        desc: 'Unordered list',         shortcut: '/bullet',  cat: 'lists',    kw: ['ul', 'unordered', 'list', 'dash'] },
-  { type: 'numbered',   label: 'Numbered List',     icon: ListOrdered, desc: 'Ordered numbered list',  shortcut: '/num',     cat: 'lists',    kw: ['ol', 'ordered', 'number'] },
-  { type: 'todo',       label: 'To-do',             icon: CheckSquare, desc: 'Task with checkbox',     shortcut: '/todo',    cat: 'lists',    kw: ['task', 'checkbox', 'check', 'action'] },
-  { type: 'quote',      label: 'Quote',             icon: Quote,       desc: 'Block quote',            shortcut: '/quote',   cat: 'blocks',   kw: ['blockquote', 'cite', 'excerpt'] },
-  { type: 'callout',    label: 'Callout',           icon: Zap,         desc: 'Highlighted info box',   shortcut: '/callout', cat: 'blocks',   kw: ['info', 'warning', 'tip', 'note', 'alert'] },
-  { type: 'toggle',     label: 'Toggle',            icon: ToggleLeft,  desc: 'Collapsible section',    shortcut: '/toggle',  cat: 'blocks',   kw: ['accordion', 'collapse', 'expand'] },
-  { type: 'code',       label: 'Code',              icon: Code,        desc: 'Code snippet',           shortcut: '/code',    cat: 'blocks',   kw: ['snippet', 'pre', 'monospace', 'programming'] },
-  { type: 'divider',    label: 'Divider',           icon: Minus,       desc: 'Horizontal separator',   shortcut: '/---',     cat: 'blocks',   kw: ['hr', 'separator', 'line', 'rule'] },
-  { type: 'image',      label: 'Image',             icon: Image,       desc: 'Upload or embed image',  shortcut: '/img',     cat: 'media',    kw: ['photo', 'picture', 'upload'] },
-  { type: 'table',      label: 'Table',             icon: Table2,      desc: '3×3 table grid',         shortcut: '/table',   cat: 'advanced', kw: ['grid', 'spreadsheet', 'data'] },
-  { type: 'columns2',   label: '2 Columns',         icon: Columns,     desc: 'Two-column layout',      shortcut: '/col2',    cat: 'advanced', kw: ['layout', 'split', 'side'] },
-  { type: 'columns3',   label: '3 Columns',         icon: LayoutGrid,  desc: 'Three-column layout',    shortcut: '/col3',    cat: 'advanced', kw: ['layout', 'triple'] },
-  { type: 'toc',        label: 'Table of Contents', icon: AlignLeft,   desc: 'Auto heading list',      shortcut: '/toc',     cat: 'advanced', kw: ['outline', 'contents', 'navigation', 'headings'] },
-  { type: 'linked_db',  label: 'Linked Database',   icon: DbIcon,      desc: 'Embed a database view',  shortcut: '/db',      cat: 'advanced', kw: ['database', 'table', 'relation', 'embed', 'data'] },
+  // ── Basic ─────────────────────────────────────────────────────────────────
+  { type: 'paragraph',  label: 'Text',             icon: Type,              desc: 'Plain text paragraph',             shortcut: '/text',     cat: 'basic',    kw: ['p', 'paragraph', 'plain', 'text'] },
+  { type: 'heading1',   label: 'Heading 1',         icon: Heading1,          desc: 'Large section heading',            shortcut: '/h1',       cat: 'basic',    kw: ['h1', 'title', 'header', 'big', 'heading', '1'] },
+  { type: 'heading2',   label: 'Heading 2',         icon: Heading2,          desc: 'Medium sub-heading',               shortcut: '/h2',       cat: 'basic',    kw: ['h2', 'subtitle', 'medium', 'heading', '2'] },
+  { type: 'heading3',   label: 'Heading 3',         icon: Heading3,          desc: 'Small sub-heading',                shortcut: '/h3',       cat: 'basic',    kw: ['h3', 'small', 'heading', '3'] },
+  { type: 'bullet',     label: 'Bulleted List',     icon: List,              desc: 'Unordered bullet list',            shortcut: '/bullet',   cat: 'basic',    kw: ['ul', 'unordered', 'list', 'dash', '-', 'bullet', 'item'] },
+  { type: 'numbered',   label: 'Numbered List',     icon: ListOrdered,       desc: 'Ordered numbered list',            shortcut: '/numbered', cat: 'basic',    kw: ['ol', 'ordered', 'number', 'numbered', '1.', 'num'] },
+  { type: 'toggle',     label: 'Toggle List',       icon: ToggleLeft,        desc: 'Collapsible expandable section',   shortcut: '/toggle',   cat: 'basic',    kw: ['accordion', 'collapse', 'expand', 'toggle', 'dropdown'] },
+  { type: 'todo',       label: 'To-do List',        icon: CheckSquare,       desc: 'Checkbox task items',              shortcut: '/todo',     cat: 'basic',    kw: ['task', 'checkbox', 'check', 'action', 'todo', 'done'] },
+  { type: 'quote',      label: 'Quote',             icon: Quote,             desc: 'Block quote with left border',     shortcut: '/quote',    cat: 'basic',    kw: ['blockquote', 'cite', 'excerpt', 'quote'] },
+  { type: 'divider',    label: 'Divider',           icon: Minus,             desc: 'Horizontal separator line',        shortcut: '/divider',  cat: 'basic',    kw: ['hr', 'separator', 'line', 'rule', '---', 'divider', 'break'] },
+  { type: 'callout',    label: 'Callout',           icon: Zap,               desc: 'Colored callout box with icon',    shortcut: '/callout',  cat: 'basic',    kw: ['info', 'warning', 'tip', 'note', 'alert', 'callout', 'highlight'] },
+  // ── Media ─────────────────────────────────────────────────────────────────
+  { type: 'image',      label: 'Image',             icon: Image,             desc: 'Upload or embed an image',         shortcut: '/image',    cat: 'media',    kw: ['photo', 'picture', 'upload', 'img', 'image'] },
+  { type: 'video',      label: 'Video',             icon: Video,             desc: 'Embed a video URL',                shortcut: '/video',    cat: 'media',    kw: ['youtube', 'vimeo', 'mp4', 'embed', 'media', 'video', 'watch'] },
+  { type: 'file',       label: 'File',              icon: FileText,          desc: 'Upload a file attachment',         shortcut: '/file',     cat: 'media',    kw: ['attachment', 'document', 'upload', 'pdf', 'file', 'attach', 'download'] },
+  { type: 'embed',      label: 'Embed',             icon: Globe,             desc: 'Embed any URL or website',         shortcut: '/embed',    cat: 'media',    kw: ['url', 'iframe', 'link', 'website', 'embed', 'external'] },
+  // ── Database ──────────────────────────────────────────────────────────────
+  { type: 'db-table',   label: 'Table',             icon: Table2,            desc: 'Inline database — table view',     shortcut: '/db-table',   cat: 'database', kw: ['database', 'table', 'inline', 'embed', 'grid', 'spreadsheet', 'data'] },
+  { type: 'db-board',   label: 'Board',             icon: Columns3,          desc: 'Inline database — kanban view',    shortcut: '/db-board',   cat: 'database', kw: ['database', 'board', 'kanban', 'inline', 'embed', 'card', 'drag'] },
+  { type: 'db-gallery', label: 'Gallery',           icon: GalleryHorizontal, desc: 'Inline database — gallery view',   shortcut: '/db-gallery', cat: 'database', kw: ['database', 'gallery', 'grid', 'photo', 'inline', 'embed', 'visual'] },
+  { type: 'db-list',    label: 'List',              icon: List,              desc: 'Inline database — list view',      shortcut: '/db-list',    cat: 'database', kw: ['database', 'list', 'inline', 'embed', 'rows', 'flat'] },
+  // ── Layout ────────────────────────────────────────────────────────────────
+  { type: 'columns2',   label: '2 Columns',         icon: Columns,           desc: 'Two-column side-by-side layout',   shortcut: '/col2',     cat: 'layout',   kw: ['layout', 'split', 'side', 'col2', 'two', 'columns', '2'] },
+  { type: 'columns3',   label: '3 Columns',         icon: LayoutGrid,        desc: 'Three-column layout',              shortcut: '/col3',     cat: 'layout',   kw: ['layout', 'triple', 'col3', 'three', 'columns', '3'] },
+  // ── Advanced ──────────────────────────────────────────────────────────────
+  { type: 'code',       label: 'Code',              icon: Code,              desc: 'Code block with syntax highlighting', shortcut: '/code',   cat: 'advanced', kw: ['snippet', 'pre', 'monospace', 'programming', 'syntax', 'code'] },
+  { type: 'table',      label: 'Simple Table',      icon: Table2,            desc: 'Basic editable 3×3 table',         shortcut: '/table',    cat: 'advanced', kw: ['grid', 'spreadsheet', 'data', 'simple', 'table'] },
+  { type: 'toc',        label: 'Table of Contents', icon: AlignLeft,         desc: 'Auto-generated heading outline',   shortcut: '/toc',      cat: 'advanced', kw: ['outline', 'contents', 'navigation', 'headings', 'toc'] },
+  { type: 'linked_db',  label: 'Linked Database',   icon: DbIcon,            desc: 'Embed a view of an existing database', shortcut: '/db',   cat: 'advanced', kw: ['database', 'table', 'relation', 'embed', 'data', 'link'] },
 ];
 
-const CAT_ORDER = ['basic', 'headings', 'lists', 'blocks', 'media', 'advanced'];
-const CAT_LABELS = { basic: 'Basic', headings: 'Headings', lists: 'Lists', blocks: 'Content', media: 'Media', advanced: 'Advanced' };
+const CAT_ORDER  = ['basic', 'media', 'database', 'layout', 'advanced'];
+const CAT_LABELS = { basic: 'Basic', media: 'Media', database: 'Database', layout: 'Layout', advanced: 'Advanced' };
 
 function getRecent() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; } }
 function saveRecent(type) {

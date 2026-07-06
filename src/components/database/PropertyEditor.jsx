@@ -12,7 +12,12 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Trash2, Plus, GripVertical, X } from 'lucide-react';
 import {
-  PROPERTY_TYPES, OPTION_COLORS, OPTION_COLOR_CLASSES, ROLLUP_FUNS,
+  PROPERTY_TYPES,
+  OPTION_COLORS,
+  OPTION_COLOR_CLASSES,
+  OPTION_COLORS_HEX,
+  ROLLUP_FUNS,
+  colorHex,
 } from './db-constants.js';
 import { genId } from './db-utils.js';
 import { DatabaseRecord } from '@/api/firestoreClient.js';
@@ -59,7 +64,7 @@ export default function PropertyEditor({ open, onClose, property, schema, onSave
 
   // Options management
   function addOption() {
-    setOptions(prev => [...prev, { id: genId(), label: 'Option', color: 'gray' }]);
+    setOptions(prev => [...prev, { id: genId(), label: 'Option', color: OPTION_COLORS_HEX[prev.length % OPTION_COLORS_HEX.length] }]);
   }
   function updateOption(id, key, val) {
     setOptions(prev => prev.map(o => o.id === id ? { ...o, [key]: val } : o));
@@ -141,7 +146,7 @@ export default function PropertyEditor({ open, onClose, property, schema, onSave
                     {/* Color picker */}
                     <Select value={opt.color} onValueChange={v => updateOption(opt.id, 'color', v)}>
                       <SelectTrigger className="w-8 h-7 p-0 border-none shadow-none flex-shrink-0">
-                        <div className={`w-4 h-4 rounded-full mx-auto ${OPTION_COLOR_CLASSES[opt.color]?.split(' ')[0]}`} />
+                        <div className="w-4 h-4 rounded-full mx-auto" style={{ backgroundColor: colorHex(opt.color) }} />
                       </SelectTrigger>
                       <SelectContent>
                         {OPTION_COLORS.map(c => (
@@ -180,7 +185,7 @@ export default function PropertyEditor({ open, onClose, property, schema, onSave
                   <SelectValue placeholder="Select database..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {databases.map(db => (
+                  {databases.filter(db => db?.id).map(db => (
                     <SelectItem key={db.id} value={db.id}>{db.icon ?? '📋'} {db.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -198,7 +203,7 @@ export default function PropertyEditor({ open, onClose, property, schema, onSave
                     <SelectValue placeholder="Select relation..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {relationProps.map(p => (
+                    {relationProps.filter(p => p?.id).map(p => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -211,7 +216,7 @@ export default function PropertyEditor({ open, onClose, property, schema, onSave
                     <SelectValue placeholder="Select property..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {targetSchema.filter(p => !['rollup','formula'].includes(p.type)).map(p => (
+                    {targetSchema.filter(p => !['rollup','formula'].includes(p.type) && p?.id).map(p => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}
                   </SelectContent>

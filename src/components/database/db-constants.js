@@ -18,7 +18,56 @@ export const PROPERTY_TYPES = {
 };
 
 // ─── Select option colors ──────────────────────────────────────────────────────
-export const OPTION_COLORS = ['gray','red','orange','yellow','green','blue','purple','pink'];
+export const OPTION_COLORS = ['gray','red','orange','yellow','green','blue','purple','pink','brown','teal','dark','light'];
+
+// ─── 12-swatch color palette (4 × 3 grid) used by the color picker ────────────
+export const COLOR_PALETTE = [
+  { key: 'gray',   label: 'Gray',   hex: '#6B7280' },
+  { key: 'brown',  label: 'Brown',  hex: '#92400E' },
+  { key: 'orange', label: 'Orange', hex: '#D97706' },
+  { key: 'yellow', label: 'Yellow', hex: '#D69E2E' },
+  { key: 'green',  label: 'Green',  hex: '#059669' },
+  { key: 'teal',   label: 'Teal',   hex: '#0D9488' },
+  { key: 'blue',   label: 'Blue',   hex: '#2563EB' },
+  { key: 'purple', label: 'Purple', hex: '#7C3AED' },
+  { key: 'pink',   label: 'Pink',   hex: '#DB2777' },
+  { key: 'red',    label: 'Red',    hex: '#DC2626' },
+  { key: 'dark',   label: 'Dark',   hex: '#1F2937' },
+  { key: 'light',  label: 'Light',  hex: '#F3F4F6' },
+];
+
+/** Returns the hex string for a color key, or the key itself if already a hex. */
+export function colorHex(key) {
+  if (!key) return '#6B7280';
+  if (key.startsWith('#')) return key;
+  return COLOR_PALETTE.find(c => c.key === key)?.hex ?? '#6B7280';
+}
+
+export const OPTION_COLORS_HEX = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16'];
+
+export function getOptionBadgeTextClass(color) {
+  const hex = colorHex(color);
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.65 ? 'text-slate-900' : 'text-white';
+}
+
+export function getOptionBadgeClasses(color) {
+  return OPTION_COLOR_CLASSES[color] ?? getOptionBadgeTextClass(color);
+}
+
+export function getOptionBadgeStyle(color) {
+  return OPTION_COLOR_CLASSES[color] ? undefined : { backgroundColor: colorHex(color) };
+}
+
+// ─── Default options for newly-created Status properties ──────────────────────
+export const DEFAULT_STATUS_OPTIONS = [
+  { id: 's_not_started', name: 'Not started', color: 'gray'  },
+  { id: 's_in_progress', name: 'In progress', color: 'blue'  },
+  { id: 's_done',        name: 'Done',        color: 'green' },
+];
 
 export const OPTION_COLOR_CLASSES = {
   gray:   'bg-gray-100   text-gray-700   dark:bg-gray-800   dark:text-gray-300',
@@ -29,6 +78,10 @@ export const OPTION_COLOR_CLASSES = {
   blue:   'bg-blue-100   text-blue-700   dark:bg-blue-950/50   dark:text-blue-300',
   purple: 'bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300',
   pink:   'bg-pink-100   text-pink-700   dark:bg-pink-950/50   dark:text-pink-300',
+  brown:  'bg-amber-100  text-amber-900  dark:bg-amber-950/50  dark:text-amber-200',
+  teal:   'bg-teal-100   text-teal-700   dark:bg-teal-950/50   dark:text-teal-300',
+  dark:   'bg-gray-800   text-gray-100   dark:bg-gray-900      dark:text-gray-200',
+  light:  'bg-gray-50    text-gray-600   border border-gray-200 dark:bg-gray-700 dark:text-gray-200',
 };
 
 // ─── Database presets ──────────────────────────────────────────────────────────

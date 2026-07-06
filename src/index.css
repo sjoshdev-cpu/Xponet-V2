@@ -35,13 +35,13 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
     --radius: 0.5rem;
-    --sidebar-background: 210 20% 98%;
-    --sidebar-foreground: 215 20% 30%;
+    --sidebar-background: 210 18% 95%;
+    --sidebar-foreground: 215 18% 34%;
     --sidebar-primary: 199 89% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 214 20% 94%;
-    --sidebar-accent-foreground: 0 0% 15%;
-    --sidebar-border: 214 20% 92%;
+    --sidebar-accent: 214 18% 92%;
+    --sidebar-accent-foreground: 0 0% 18%;
+    --sidebar-border: 214 18% 88%;
     --sidebar-ring: 199 89% 48%;
   }
 
@@ -109,4 +109,39 @@ html {
   content: attr(data-placeholder);
   color: hsl(var(--muted-foreground));
   pointer-events: none;
+}
+
+/* ── Inline reference chips (inserted by @ and [[ pickers) ───────────────── */
+.inline-page-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.1);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.875em;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.15s;
+  white-space: nowrap;
+  user-select: all;
+}
+.inline-page-ref:hover {
+  background-color: hsl(var(--primary) / 0.2);
+}
+
+.inline-mention {
+  display: inline-flex;
+  align-items: center;
+  background-color: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.875em;
+  font-weight: 500;
+  cursor: default;
+  white-space: nowrap;
+  user-select: all;
 }

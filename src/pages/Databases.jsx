@@ -1,6 +1,6 @@
 // src/pages/Databases.jsx
 // Full Notion-like database page — table view, column types, CSV import/export, customize layout
-import { useState, useRef, useCallback } from "react";
+import { Component, useState, useRef, useCallback } from "react";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Page, withLastEditedBy } from "@/api/firestoreClient";
@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import AddPropertyModal, { COL_TYPES } from "@/components/database/AddPropertyModal";
 import ColumnHeaderDropdown from "@/components/database/ColumnHeaderDropdown";
+import StatusOptionsPanel from "@/components/database/StatusOptionsPanel";
+import { DEFAULT_STATUS_OPTIONS, OPTION_COLOR_CLASSES } from "@/components/database/db-constants.js";
 
 const STATUS_OPTS = [
   { label: "Not started", dot: "bg-gray-400" },
@@ -167,6 +169,40 @@ function downloadCSV(csv, filename) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Error boundary — catches render errors inside the table
+// ─────────────────────────────────────────────────────────────
+class DatabaseTableErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[DatabaseTableErrorBoundary]', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-8">
+          <div className="text-4xl">⚠️</div>
+          <p className="font-semibold text-foreground">Something went wrong rendering this table</p>
+          <p className="text-sm text-muted-foreground">{this.state.error?.message}</p>
+          <button
+            className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Cell component
 // ─────────────────────────────────────────────────────────────
 function Cell({ col, value, onChange }) {
@@ -188,22 +224,41 @@ function Cell({ col, value, onChange }) {
   }
 
   if (col.type === "status") {
-    const opt = STATUS_OPTS.find(s => s.label === value);
+    // Use schema options if they are objects (new format), otherwise fall back to defaults
+    const statusOpts =
+      col.options?.length && typeof col.options[0] === 'object'
+        ? col.options
+        : DEFAULT_STATUS_OPTIONS;
+    // Support values stored as option id OR legacy label string
+    const opt = statusOpts.find(
+      (s) => s.id === value || s.name === value || s.label === value
+    );
     return (
-      <Select value={value || ""} onValueChange={onChange}>
+      <Select value={value || "__none__"} onValueChange={(v) => onChange(v === "__none__" ? null : v)}>
         <SelectTrigger className="h-8 border-none bg-transparent px-2 text-xs focus:ring-0 w-full">
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${opt?.dot || "bg-gray-400"}`} />
-            <span>{value || <span className="text-muted-foreground">—</span>}</span>
-          </div>
+          {opt ? (
+            <span
+              className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                OPTION_COLOR_CLASSES[opt.color] ?? OPTION_COLOR_CLASSES.gray
+              }`}
+            >
+              {opt.name ?? opt.label}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
         </SelectTrigger>
         <SelectContent>
-          {STATUS_OPTS.map(s => (
-            <SelectItem key={s.label} value={s.label}>
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${s.dot}`} />
-                {s.label}
-              </div>
+          <SelectItem value="__none__">—</SelectItem>
+          {statusOpts.map((s) => (
+            <SelectItem key={s.id} value={s.id}>
+              <span
+                className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                  OPTION_COLOR_CLASSES[s.color] ?? OPTION_COLOR_CLASSES.gray
+                }`}
+              >
+                {s.name ?? s.label}
+              </span>
             </SelectItem>
           ))}
         </SelectContent>
@@ -213,15 +268,15 @@ function Cell({ col, value, onChange }) {
 
   if (col.type === "select") {
     return (
-      <Select value={value || ""} onValueChange={onChange}>
+      <Select value={value || "__none__"} onValueChange={v => onChange(v === "__none__" ? "" : v)}>
         <SelectTrigger className="h-8 border-none bg-transparent px-2 text-xs focus:ring-0 w-full">
           {value
             ? <Badge variant="secondary" className="text-[11px] py-0">{value}</Badge>
             : <span className="text-muted-foreground">—</span>}
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">—</SelectItem>
-          {(col.options || []).map(o => (
+          <SelectItem value="__none__">—</SelectItem>
+          {(col.options || []).filter(Boolean).map(o => (
             <SelectItem key={o} value={o}>{o}</SelectItem>
           ))}
         </SelectContent>
@@ -458,6 +513,7 @@ export default function Databases() {
   const [showCustomize, setShowCustomize] = useState(false);
   const [isLocked, setIsLocked]           = useState(false);
   const [activeTab, setActiveTab]         = useState("all");
+  const [editingOptionsCol, setEditingOptionsCol] = useState(null);
 
   // ── Firestore ───────────────────────────────────────────────
   const { data: pages = [], isLoading } = useQuery({
@@ -532,6 +588,11 @@ export default function Databases() {
 
   const deleteColumn = id => {
     const cols = columns.filter(c => c.id !== id);
+    setColumns(cols); persist(cols, rows);
+  };
+
+  const updateColumn = (id, patch) => {
+    const cols = columns.map(c => c.id === id ? { ...c, ...patch } : c);
     setColumns(cols); persist(cols, rows);
   };
 
@@ -827,6 +888,7 @@ export default function Databases() {
 
       {/* ── TABLE VIEW ── */}
       {activeView === "table" && (
+        <DatabaseTableErrorBoundary>
         <div className="flex-1 overflow-auto">
           <table className="w-full border-collapse text-sm min-w-max">
             <thead>
@@ -848,6 +910,11 @@ export default function Databases() {
                           <ColumnHeaderDropdown
                             onHide={() => toggleHide(col.id)}
                             onDelete={() => deleteColumn(col.id)}
+                            onEditOptions={
+                              ['status', 'select', 'multiselect'].includes(col.type)
+                                ? () => setEditingOptionsCol(col)
+                                : undefined
+                            }
                           />
                         )}
                       </div>
@@ -924,6 +991,7 @@ export default function Databases() {
             {hidden.size > 0 && <span className="opacity-60">{hidden.size} hidden {hidden.size === 1 ? "property" : "properties"}</span>}
           </div>
         </div>
+        </DatabaseTableErrorBoundary>
       )}
 
       {/* ── LIST VIEW ── */}
@@ -982,6 +1050,21 @@ export default function Databases() {
 
       {/* Add property modal */}
       <AddPropertyModal open={showAddProp} onClose={() => setShowAddProp(false)} onAdd={addColumn} />
+
+      {editingOptionsCol && (
+        <StatusOptionsPanel
+          open={!!editingOptionsCol}
+          onClose={() => setEditingOptionsCol(null)}
+          options={
+            editingOptionsCol.options?.filter((o) => typeof o === 'object') ??
+            DEFAULT_STATUS_OPTIONS
+          }
+          onSave={(newOpts) => {
+            updateColumn(editingOptionsCol.id, { options: newOpts });
+            setEditingOptionsCol(null);
+          }}
+        />
+      )}
     </div>
   );
 }

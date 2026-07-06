@@ -11,6 +11,8 @@ import KanbanBoard from '@/components/tasks/KanbanBoard';
 import TaskTable from '@/components/tasks/TaskTable';
 import TaskModal from '@/components/tasks/TaskModal';
 import WorkloadView from '@/components/tasks/WorkloadView';
+import { isAssignedTo } from '@/lib/task-utils';
+import { canViewAllTasks } from '@/lib/permissions';
 
 const TABS = [
   { id: 'Board',      label: 'Board' },
@@ -23,16 +25,19 @@ const TABS = [
 ];
 
 export default function Tasks() {
-  const { currentOrg, user } = useWorkspace();
+  const { currentOrg, user, role } = useWorkspace();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('Board');
   const [editingTask, setEditingTask] = useState(null);
   const [creatingStatus, setCreatingStatus] = useState(null);
 
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['tasks', currentOrg?.id],
-    queryFn: () => Task.filter({ org_id: currentOrg?.id }),
-    enabled: !!currentOrg?.id
+    queryKey: ['tasks', currentOrg?.id, role, user?.email],
+    queryFn: () =>
+      canViewAllTasks(role)
+        ? Task.filter({ org_id: currentOrg?.id })
+        : Task.filter({ org_id: currentOrg?.id, assignee_emails: { arrayContains: user?.email } }),
+    enabled: !!currentOrg?.id && !!role,
   });
 
   const createTask = useMutation({
@@ -65,7 +70,7 @@ export default function Tasks() {
     setCreatingStatus(null);
   };
 
-  const myTasks = tasks.filter((t) => t.assignee_email === user?.email);
+  const myTasks = tasks.filter((t) => isAssignedTo(t, user?.email));
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

@@ -396,6 +396,79 @@ export function ReviewersCell({ record, orgMembers, dbId, currentUser }) {
   );
 }
 
+// ─── PendingTitleInput ──────────────────────────────────────────────────────
+// Bare inline title input used by the grouped ("By Category") view — commits
+// on Enter/blur, cancels on Escape.
+
+export function PendingTitleInput({ onCommit, onCancel }) {
+  const [value, setValue] = useState('');
+
+  return (
+    <input
+      autoFocus
+      value={value}
+      placeholder="New document title…"
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => onCommit(value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); onCommit(value); }
+        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+      }}
+      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
+    />
+  );
+}
+
+// ─── PendingRow ───────────────────────────────────────────────────────────────
+// Inline "new document" row for the flat (non-grouped) table view. Renders a
+// title input in the title cell and empty placeholders across the rest of the
+// row so it lines up with real records, then creates the record on commit.
+
+export function PendingRow({ allCols, onCommit, onCancel, creating }) {
+  const [value, setValue] = useState('');
+
+  const commit = () => {
+    if (creating) return;
+    onCommit(value);
+  };
+
+  return (
+    <tr className="bg-primary/5">
+      {allCols.map((col) => (
+        <td key={col} className="px-3 py-2.5 align-middle">
+          {col === 'title' ? (
+            <div className="flex items-center gap-1.5">
+              <span className="shrink-0 text-sm">📄</span>
+              {creating ? (
+                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Creating…
+                </span>
+              ) : (
+                <input
+                  autoFocus
+                  value={value}
+                  placeholder="New document title…"
+                  onChange={(e) => setValue(e.target.value)}
+                  onBlur={commit}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+                    if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                  }}
+                  className="flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground/60 placeholder:font-normal"
+                />
+              )}
+            </div>
+          ) : (
+            <span className="text-muted-foreground/30 text-sm select-none">—</span>
+          )}
+        </td>
+      ))}
+      <td />
+    </tr>
+  );
+}
+
 // ─── RecordsTable ─────────────────────────────────────────────────────────────
 
 export function RecordsTable({
@@ -499,7 +572,10 @@ export function RecordsTable({
 
 // ─── GroupSection ─────────────────────────────────────────────────────────────
 
-export function GroupSection({ groupKey, records, visibleCols, schema, orgMembers, dbId, currentUser }) {
+export function GroupSection({
+  groupKey, records, visibleCols, schema, orgMembers, dbId, currentUser,
+  onAddProperty, onHideProperty, onDeleteProperty, onSortProperty,
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const displayLabel = groupKey || 'No category';
   const colorClass = CATEGORY_COLORS[groupKey] ?? 'bg-muted text-muted-foreground';
@@ -529,6 +605,10 @@ export function GroupSection({ groupKey, records, visibleCols, schema, orgMember
             orgMembers={orgMembers}
             dbId={dbId}
             currentUser={currentUser}
+            onAddProperty={onAddProperty}
+            onHideProperty={onHideProperty}
+            onDeleteProperty={onDeleteProperty}
+            onSortProperty={onSortProperty}
           />
         </div>
       )}
@@ -1035,6 +1115,10 @@ export default function DocumentHub() {
                 orgMembers={currentOrg?.members}
                 dbId={dbId}
                 currentUser={user}
+                onAddProperty={() => setShowAddProp(true)}
+                onHideProperty={hideProperty}
+                onDeleteProperty={deleteProperty}
+                onSortProperty={sortProperty}
               />
             ))}
             {pendingRow && (

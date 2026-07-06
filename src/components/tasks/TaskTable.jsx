@@ -10,6 +10,8 @@ const safeDate = (val) => {
 };
 import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { getAssignees, getInitials } from '@/lib/task-utils';
 
 const PRIORITY_BADGE = {
   Urgent: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
@@ -26,16 +28,48 @@ const STATUS_BADGE = {
   Done: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300',
 };
 
+const STATUSES = Object.keys(STATUS_BADGE);
+const PRIORITIES = Object.keys(PRIORITY_BADGE);
+
 const COLUMNS = [
-  { key: 'title', label: 'Title', width: 'min-w-[240px]' },
-  { key: 'status', label: 'Status', width: 'w-[120px]' },
-  { key: 'priority', label: 'Priority', width: 'w-[100px]' },
-  { key: 'assignee_name', label: 'Assignee', width: 'w-[130px]' },
-  { key: 'due_date', label: 'Due Date', width: 'w-[110px]' },
-  { key: 'effort', label: 'Effort', width: 'w-[80px]' },
+  { key: 'title', label: 'Title' },
+  { key: 'status', label: 'Status' },
+  { key: 'priority', label: 'Priority' },
+  { key: 'assignee_name', label: 'Assignee' },
+  { key: 'due_date', label: 'Due Date' },
+  { key: 'effort', label: 'Effort' },
 ];
 
-export default function TaskTable({ tasks, onOpenTask, onCreateTask, onDeleteTask, emptyMessage }) {
+// Header and every virtualized row share this exact template, so the columns
+// always line up regardless of how the browser distributes leftover width.
+const GRID_TEMPLATE = 'minmax(200px, 1fr) 130px 110px 160px 120px 80px 40px';
+
+function BadgeSelect({ value, options, badgeClasses, onSelect, placeholder }) {
+  return (
+    <Select value={value || ''} onValueChange={onSelect}>
+      <SelectTrigger className="h-auto w-fit border-none bg-transparent p-0 shadow-none focus-visible:ring-1 dark:bg-transparent dark:hover:bg-transparent [&>svg]:opacity-0 [&>svg]:w-3 [&>svg]:-ml-1 hover:[&>svg]:opacity-100">
+        {value ? (
+          <span className={cn('text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap', badgeClasses[value])}>
+            {value}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">{placeholder}</span>
+        )}
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((opt) => (
+          <SelectItem key={opt} value={opt}>
+            <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap', badgeClasses[opt])}>
+              {opt}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+export default function TaskTable({ tasks, onOpenTask, onCreateTask, onDeleteTask, onUpdateTask, emptyMessage }) {
   const [sortKey, setSortKey] = useState('');
   const [sortDir, setSortDir] = useState('asc');
   const scrollRef = useRef(null);
@@ -68,66 +102,101 @@ export default function TaskTable({ tasks, onOpenTask, onCreateTask, onDeleteTas
 
   return (
     <div className="flex flex-col h-full">
-      <div ref={scrollRef} className="overflow-auto flex-1">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-background border-b border-border z-10">
-            <tr>
-              {COLUMNS.map(col => (
-                <th
-                  key={col.key}
-                  className={cn('text-left px-4 py-3 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none', col.width)}
-                  onClick={() => handleSort(col.key)}
-                >
-                  <div className="flex items-center gap-1">
-                    {col.label}
-                    {sortKey === col.key && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
-                  </div>
-                </th>
-              ))}
-              <th className="w-10" />
-            </tr>
-          </thead>
-          <tbody style={{ height: totalHeight, position: 'relative', display: 'block' }}>
+      <div ref={scrollRef} className="overflow-auto flex-1 text-sm">
+        <div className="min-w-[840px]">
+          <div
+            className="grid sticky top-0 bg-background border-b border-border z-10"
+            style={{ gridTemplateColumns: GRID_TEMPLATE }}
+          >
+            {COLUMNS.map(col => (
+              <button
+                key={col.key}
+                type="button"
+                className="flex items-center gap-1 text-left px-4 py-3 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none"
+                onClick={() => handleSort(col.key)}
+              >
+                {col.label}
+                {sortKey === col.key && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+              </button>
+            ))}
+            <div />
+          </div>
+
+          <div style={{ height: totalHeight, position: 'relative' }}>
             {virtualItems.map(virtualRow => {
               const task = sorted[virtualRow.index];
+              const assignees = getAssignees(task);
               return (
-                <tr
+                <div
                   key={task.id}
                   data-index={virtualRow.index}
                   ref={rowVirtualizer.measureElement}
-                  className="border-b border-border/50 hover:bg-accent/30 transition-colors group absolute w-full"
-                  style={{ top: virtualRow.start, display: 'table', tableLayout: 'fixed' }}
+                  className="grid items-center absolute w-full border-b border-border/50 hover:bg-accent/30 transition-colors group"
+                  style={{ top: virtualRow.start, gridTemplateColumns: GRID_TEMPLATE }}
                 >
-                  <td className="px-4 py-3 min-w-[240px]">
-                    <button onClick={() => onOpenTask(task)} className="font-medium hover:text-primary transition-colors text-left">
+                  <div className="px-4 py-3 overflow-hidden">
+                    <button
+                      onClick={() => onOpenTask(task)}
+                      title={task.title}
+                      className="font-medium hover:text-primary transition-colors text-left truncate block w-full"
+                    >
                       {task.title}
                     </button>
-                  </td>
-                  <td className="px-4 py-3 w-[120px]">
-                    <span className={cn('text-[11px] font-semibold px-2 py-1 rounded-full', STATUS_BADGE[task.status])}>
-                      {task.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 w-[100px]">
-                    <span className={cn('text-[11px] font-semibold px-2 py-1 rounded-full', PRIORITY_BADGE[task.priority])}>
-                      {task.priority}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 w-[130px] text-muted-foreground">{task.assignee_name || '—'}</td>
-                  <td className="px-4 py-3 w-[110px] text-muted-foreground">
+                  </div>
+                  <div className="px-4 py-3">
+                    <BadgeSelect
+                      value={task.status}
+                      options={STATUSES}
+                      badgeClasses={STATUS_BADGE}
+                      placeholder="Set status"
+                      onSelect={(v) => onUpdateTask?.(task.id, { status: v })}
+                    />
+                  </div>
+                  <div className="px-4 py-3">
+                    <BadgeSelect
+                      value={task.priority}
+                      options={PRIORITIES}
+                      badgeClasses={PRIORITY_BADGE}
+                      placeholder="Set priority"
+                      onSelect={(v) => onUpdateTask?.(task.id, { priority: v })}
+                    />
+                  </div>
+                  <div className="px-4 py-3 text-muted-foreground overflow-hidden">
+                    {assignees.length === 0 ? '—' : (
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex -space-x-1.5 shrink-0">
+                          {assignees.slice(0, 3).map((a, i) => (
+                            <div key={a.email || i} title={a.name || a.email}
+                              className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary border-2 border-background">
+                              {getInitials(a)}
+                            </div>
+                          ))}
+                          {assignees.length > 3 && (
+                            <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[8px] font-bold text-muted-foreground border-2 border-background">
+                              +{assignees.length - 3}
+                            </div>
+                          )}
+                        </div>
+                        <span className="truncate text-xs">
+                          {assignees.length === 1 ? (assignees[0].name || assignees[0].email) : `${assignees.length} people`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                     {task.due_date ? format(safeDate(task.due_date), 'MMM d, yyyy') : '—'}
-                  </td>
-                  <td className="px-4 py-3 w-[80px] text-muted-foreground">{task.effort || '—'}</td>
-                  <td className="px-4 py-3 w-10">
+                  </div>
+                  <div className="px-4 py-3 text-muted-foreground">{task.effort || '—'}</div>
+                  <div className="px-2 py-3">
                     <button onClick={() => onDeleteTask(task.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               );
             })}
-          </tbody>
-        </table>
+          </div>
+        </div>
 
         {sorted.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">

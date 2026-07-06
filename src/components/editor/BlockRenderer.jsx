@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, lazy, Suspense } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { GripVertical, ChevronRight, ChevronDown, Trash2, Copy, ArrowUp, ArrowDown, Type, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CALLOUT_COLORS } from '@/lib/design-system';
@@ -7,9 +7,12 @@ import {
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent
 } from '@/components/ui/dropdown-menu';
 import LinkedDatabaseBlockImport from '@/components/database/LinkedDatabaseBlock.jsx';
+import InlineDatabaseEmbedImport from '@/components/database/InlineDatabaseEmbed.jsx';
+import TableBlock from '@/components/editor/TableBlock.jsx';
 
 // Avoid circular import issues — alias for use in renderBlock()
-const _LinkedDatabaseBlock = LinkedDatabaseBlockImport;
+const _LinkedDatabaseBlock   = LinkedDatabaseBlockImport;
+const _InlineDatabaseEmbed   = InlineDatabaseEmbedImport;
 
 const HEADING_TYPES = ['heading1', 'heading2', 'heading3'];
 
@@ -60,7 +63,7 @@ function parseMarkdownLine(line) {
 }
 
 // contentEditable component using innerHTML for formatting persistence
-function EditableText({ value, onChange, onPasteBlocks, placeholder, className, tag: Tag = 'div', onKeyDown: onKeyDownProp }) {
+function EditableText({ value, onChange, onPasteBlocks, placeholder, className, tag: Tag = 'div', onKeyDown: onKeyDownProp, readOnly = false }) {
   const ref = useRef(null);
   const isFocused = useRef(false);
 
@@ -92,14 +95,14 @@ function EditableText({ value, onChange, onPasteBlocks, placeholder, className, 
   return (
     <Tag
       ref={ref}
-      contentEditable
+      contentEditable={!readOnly}
       suppressContentEditableWarning
-      className={cn('outline-none', className)}
+      className={cn('outline-none', className, readOnly && 'pointer-events-none')}
       data-placeholder={placeholder}
       onFocus={() => { isFocused.current = true; }}
       onBlur={() => { isFocused.current = false; }}
-      onInput={(e) => onChange(normalizeHtml(e.currentTarget.innerHTML))}
-      onPaste={handlePaste}
+      onInput={!readOnly ? (e) => onChange(normalizeHtml(e.currentTarget.innerHTML)) : undefined}
+      onPaste={!readOnly ? handlePaste : undefined}
       onKeyDown={onKeyDownProp}
     />
   );
@@ -110,6 +113,7 @@ export default function BlockRenderer({
   onChange,
   onDelete,
   onAddAfter,
+  onAddBefore,
   onSlash,
   onKeyDown: onKeyDownLegacy,
   onPasteBlocks,
@@ -126,6 +130,8 @@ export default function BlockRenderer({
   isDragging,
   commentCount = 0,
   onCommentClick,
+  onTrigger,
+  readOnly = false,
 }) {
   const [toggleOpen, setToggleOpen] = useState(false);
 
@@ -147,6 +153,21 @@ export default function BlockRenderer({
     if (e.key === 'Backspace' && isEmpty(block.content) && block.type === 'paragraph') {
       e.preventDefault();
       onDelete();
+    }
+  };
+
+  const handleBlockKeyDown = (e) => {
+    if (block.type !== 'database-embed') return;
+    const interactiveTarget = e.target.closest('input,textarea,button,select,summary,option') || e.target.closest('[contenteditable]');
+    if (interactiveTarget && interactiveTarget !== e.currentTarget) return;
+
+    if ((e.key === 'Enter' || e.key === 'ArrowDown') && !e.shiftKey) {
+      e.preventDefault();
+      onAddAfter?.({ focus: true });
+    }
+    if ((e.key === 'ArrowUp' || e.key === 'Backspace') && !e.shiftKey) {
+      e.preventDefault();
+      onAddBefore?.({ focus: true });
     }
   };
 
@@ -331,32 +352,74 @@ export default function BlockRenderer({
             />
           </div>
         );
-      case 'table': {
-        const rows = block.rows || [['', '', ''], ['', '', ''], ['', '', '']];
-        return (
-          <div className="overflow-x-auto my-1">
-            <table className="w-full border-collapse border border-border text-sm">
-              {rows.map((row, ri) => (
-                <tr key={ri} className={ri === 0 ? 'bg-muted/50 font-medium' : ''}>
-                  {row.map((cell, ci) => (
-                    <td key={ci} className="border border-border px-3 py-1.5 min-w-[100px]">
-                      <EditableText
-                        value={cell}
-                        onChange={(v) => {
-                          const newRows = rows.map((r, rIdx) => rIdx === ri ? r.map((c, cIdx) => cIdx === ci ? v : c) : r);
-                          onChange({ ...block, rows: newRows });
-                        }}
-                        placeholder={ri === 0 ? `Header ${ci + 1}` : ''}
-                        className="outline-none w-full"
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </table>
+      case 'video':
+        return block.url ? (
+          <div className="rounded-lg overflow-hidden aspect-video bg-black">
+            <iframe
+              src={block.url}
+              className="w-full h-full rounded-lg"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              title={block.caption || 'Embedded video'}
+            />
+          </div>
+        ) : (
+          <div className="border-2 border-dashed border-border rounded-lg p-4 flex gap-2 items-center">
+            <input
+              placeholder="Paste video URL (YouTube, Vimeo…) and press Enter…"
+              className="flex-1 text-sm bg-transparent outline-none text-muted-foreground"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onChange({ ...block, url: e.target.value });
+              }}
+            />
           </div>
         );
-      }
+      case 'file':
+        return block.url ? (
+          <a
+            href={block.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 px-4 py-3 border border-border rounded-lg hover:bg-accent transition-colors text-sm"
+          >
+            <span className="text-lg">📎</span>
+            <span className="flex-1 truncate font-medium">{block.name || block.url}</span>
+            <span className="text-xs text-muted-foreground shrink-0">Download ↗</span>
+          </a>
+        ) : (
+          <div className="border-2 border-dashed border-border rounded-lg p-4 flex gap-2 items-center">
+            <input
+              placeholder="Paste file URL and press Enter…"
+              className="flex-1 text-sm bg-transparent outline-none text-muted-foreground"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onChange({ ...block, url: e.target.value });
+              }}
+            />
+          </div>
+        );
+      case 'embed':
+        return block.url ? (
+          <div className="rounded-lg overflow-hidden border border-border" style={{ height: '400px' }}>
+            <iframe
+              src={block.url}
+              className="w-full h-full"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              title={block.caption || 'Embedded content'}
+            />
+          </div>
+        ) : (
+          <div className="border-2 border-dashed border-border rounded-lg p-4 flex gap-2 items-center">
+            <input
+              placeholder="Paste any URL to embed and press Enter…"
+              className="flex-1 text-sm bg-transparent outline-none text-muted-foreground"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onChange({ ...block, url: e.target.value });
+              }}
+            />
+          </div>
+        );
+      case 'table':
+        return <TableBlock block={block} onChange={onChange} />;
       case 'columns2':
       case 'columns3': {
         const colCount = block.type === 'columns2' ? 2 : 3;
@@ -420,6 +483,17 @@ export default function BlockRenderer({
           />
         );
       }
+      case 'database-embed': {
+        const InlineDatabaseEmbed = _InlineDatabaseEmbed;
+        return (
+          <InlineDatabaseEmbed
+            block={block}
+            onChange={(updates) => onChange({ ...block, ...updates })}
+            onFocusNext={onAddAfter}
+            onFocusPrevious={onAddBefore}
+          />
+        );
+      }
       default:
         return (
           <EditableText
@@ -444,56 +518,88 @@ export default function BlockRenderer({
         isDragging && 'opacity-50 shadow-lg rounded-lg',
       )}
       data-block-id={block.id}
+      onInput={onTrigger ? (e) => {
+        // Event delegation: detect @ and [[ triggers typed in any contentEditable child
+        if (!e.target?.isContentEditable) return;
+        try {
+          const sel = window.getSelection();
+          if (!sel || !sel.rangeCount) return;
+          if (!e.currentTarget.contains(sel.focusNode)) return;
+          const range = sel.getRangeAt(0);
+          // Build text-before-caret across all text nodes
+          const preRange = range.cloneRange();
+          preRange.selectNodeContents(e.target);
+          preRange.setEnd(range.startContainer, range.startOffset);
+          const textBefore = preRange.toString();
+          // @mention: any word chars after @
+          const mentionMatch = textBefore.match(/@(\w*)$/);
+          // [[page-link: any non-] chars after [[
+          const pageLinkMatch = textBefore.match(/\[\[([^\]]*)$/);
+          if (mentionMatch) {
+            const rect = range.getBoundingClientRect();
+            onTrigger({ type: 'mention', query: mentionMatch[1], rect });
+          } else if (pageLinkMatch) {
+            const rect = range.getBoundingClientRect();
+            onTrigger({ type: 'page-link', query: pageLinkMatch[1], rect });
+          } else {
+            onTrigger(null);
+          }
+        } catch {
+          onTrigger(null);
+        }
+      } : undefined}
     >
       {/* Drag handle + block menu */}
-      <div className="block-handle flex items-center gap-0.5 pt-1 -ml-8 shrink-0">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              {...(dragHandleProps || {})}
-              onClick={(e) => onBlockSelect?.(block.id, e)}
-              className={cn(
-                'h-6 w-6 flex items-center justify-center rounded hover:bg-accent transition-colors cursor-grab active:cursor-grabbing',
-                isSelected && 'bg-primary/10'
-              )}
-              title="Drag to reorder · Click to select"
-            >
-              <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48">
-            <DropdownMenuItem onClick={onDelete}>
-              <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDuplicate}>
-              <Copy className="h-3.5 w-3.5 mr-2" /> Duplicate
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onMoveUp}>
-              <ArrowUp className="h-3.5 w-3.5 mr-2" /> Move up
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onMoveDown}>
-              <ArrowDown className="h-3.5 w-3.5 mr-2" /> Move down
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Type className="h-3.5 w-3.5 mr-2" /> Turn into...
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                {TURN_INTO_TYPES.map(t => (
-                  <DropdownMenuItem
-                    key={t.type}
-                    onClick={() => onChange({ ...block, type: t.type })}
-                    className={block.type === t.type ? 'font-medium text-primary' : ''}
-                  >
-                    {t.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {!readOnly && (
+        <div className="block-handle flex items-center gap-0.5 pt-1 -ml-8 shrink-0">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                {...(dragHandleProps || {})}
+                onClick={(e) => onBlockSelect?.(block.id, e)}
+                className={cn(
+                  'h-6 w-6 flex items-center justify-center rounded hover:bg-accent transition-colors cursor-grab active:cursor-grabbing',
+                  isSelected && 'bg-primary/10'
+                )}
+                title="Drag to reorder · Click to select"
+              >
+                <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem onClick={onDelete}>
+                <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onDuplicate}>
+                <Copy className="h-3.5 w-3.5 mr-2" /> Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onMoveUp}>
+                <ArrowUp className="h-3.5 w-3.5 mr-2" /> Move up
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onMoveDown}>
+                <ArrowDown className="h-3.5 w-3.5 mr-2" /> Move down
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Type className="h-3.5 w-3.5 mr-2" /> Turn into...
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {TURN_INTO_TYPES.map(t => (
+                    <DropdownMenuItem
+                      key={t.type}
+                      onClick={() => onChange({ ...block, type: t.type })}
+                      className={block.type === t.type ? 'font-medium text-primary' : ''}
+                    >
+                      {t.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
 
       {/* Block content */}
       <div className="flex-1 min-w-0">

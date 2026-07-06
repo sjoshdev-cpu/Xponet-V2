@@ -68,6 +68,15 @@ function SheetContent({
         {...props}
       >
         {children}
+        {/*
+         * Accessibility fallbacks — Radix warns when Dialog.Content has no
+         * matching Dialog.Title / Dialog.Description in the DOM.  These
+         * sr-only elements are rendered AFTER {children} so an explicit
+         * <SheetTitle> provided by the consumer (first in DOM order) takes
+         * precedence for aria-labelledby / aria-describedby.
+         */}
+        <SheetPrimitive.Title className="sr-only">Panel</SheetPrimitive.Title>
+        <SheetPrimitive.Description className="sr-only" />
         {showCloseButton && (
           <SheetPrimitive.Close data-slot="sheet-close" asChild>
             <Button

@@ -143,6 +143,7 @@ function NewTicketModal({ open, onClose, orgId, members = [], user }) {
       onClose();
       setForm({ title: '', description: '', severity: 'Medium', sla_tier: 'Standard', assigned_to: '', assigned_to_name: '', client_name: '' });
     },
+    onError: () => toast.error('Failed to create ticket — please try again'),
   });
 
   const set = (key) => (val) => setForm((f) => ({ ...f, [key]: val }));
@@ -250,6 +251,7 @@ function TicketRow({ ticket, index }) {
   const updateMutation = useMutation({
     mutationFn: (data) => Ticket.update(ticket.id, data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tickets'] }),
+    onError: () => toast.error('Failed to update ticket'),
   });
 
   const escalate = (e) => {
