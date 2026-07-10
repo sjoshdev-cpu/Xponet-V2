@@ -22,6 +22,7 @@ import {
 import { cn } from '@/lib/utils';
 import { canAccessCommandCenter } from '@/lib/permissions';
 import { getPageRoute } from '@/lib/pageRouter';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 
 // Flat, non-recursive page row — rendered by the virtualizer
 function PageRow({ page, level, hasChildren, isExpanded, activePath, onToggle, onCreateChild, onDelete, onRename, onFavorite, databases }) {
@@ -294,12 +295,9 @@ export default function Sidebar({ onOpenSearch }) {
 
   return (
     <aside className="w-[240px] h-screen flex flex-col bg-sidebar border-r border-sidebar-border shrink-0 select-none">
-      {/* Workspace header */}
+      {/* Workspace header — switcher lists workspaces, invites, and accounts */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-sidebar-border">
-        <Link to="/settings" className="flex items-center gap-2 hover:bg-sidebar-accent rounded-md px-1.5 py-1 transition-colors min-w-0">
-          <span className="text-lg">{currentOrg?.icon || '🏠'}</span>
-          <span className="font-semibold text-sm truncate">{currentOrg?.name || 'Workspace'}</span>
-        </Link>
+        <WorkspaceSwitcher />
         <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0">
           <ChevronsLeft className="h-4 w-4" />
         </Button>

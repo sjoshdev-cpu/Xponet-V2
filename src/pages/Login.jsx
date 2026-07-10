@@ -12,7 +12,13 @@ import GoogleIcon from "@/components/GoogleIcon";
 export default function Login() {
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  // Pre-filled when the user picked "switch account" in the workspace
+  // switcher — consumed once so it doesn't stick around.
+  const [email, setEmail] = useState(() => {
+    const hint = localStorage.getItem("xponet-login-hint") || "";
+    localStorage.removeItem("xponet-login-hint");
+    return hint;
+  });
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 

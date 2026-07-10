@@ -174,12 +174,26 @@ export function WorkspaceProvider({ children }) {
     setPendingInvites(prev => prev.filter(o => o.id !== org.id));
   }, [firebaseUser]);
 
+  /** Create an additional workspace owned by the current user and switch to it. */
+  const createWorkspace = useCallback(async (name, icon = '🏠') => {
+    const newOrg = await Organization.create({
+      name: name || `${firebaseUser.displayName || 'My'}'s Workspace`,
+      icon,
+      owner_email: firebaseUser.email,
+      ...buildMemberFields([{ email: firebaseUser.email, role: 'admin', full_name: firebaseUser.displayName || '' }]),
+    });
+    setOrgs(prev => [...prev, newOrg]);
+    setCurrentOrg(newOrg);
+    localStorage.setItem('xponet-org', newOrg.id);
+    return newOrg;
+  }, [firebaseUser]);
+
   const role = getRole(currentOrg, user?.email);
 
   return (
     <WorkspaceContext.Provider value={{
       user, currentOrg, orgs, loading, role,
-      pendingInvites, acceptInvite, declineInvite,
+      pendingInvites, acceptInvite, declineInvite, createWorkspace,
       sidebarOpen, setSidebarOpen,
       theme, setTheme,
       switchOrg, refreshOrgs, initWorkspace

@@ -13,6 +13,28 @@ import {
 
 const AuthContext = createContext();
 
+const KNOWN_ACCOUNTS_KEY = 'xponet-known-accounts';
+
+/**
+ * Accounts that have signed in on this device (email + display name only —
+ * no credentials). Firebase Auth holds a single active session, so the
+ * workspace switcher lists these and "switching" re-authenticates as them.
+ */
+export function getKnownAccounts() {
+  try {
+    return JSON.parse(localStorage.getItem(KNOWN_ACCOUNTS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function rememberAccount(firebaseUser) {
+  if (!firebaseUser?.email) return;
+  const accounts = getKnownAccounts().filter((a) => a.email !== firebaseUser.email);
+  accounts.unshift({ email: firebaseUser.email, name: firebaseUser.displayName || '' });
+  localStorage.setItem(KNOWN_ACCOUNTS_KEY, JSON.stringify(accounts.slice(0, 5)));
+}
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
@@ -24,6 +46,7 @@ export const AuthProvider = ({ children }) => {
       setUser(firebaseUser);
       setAuthError(firebaseUser ? null : { type: 'auth_required' });
       setIsLoadingAuth(false);
+      if (firebaseUser) rememberAccount(firebaseUser);
     });
     return unsubscribe;
   }, []);
