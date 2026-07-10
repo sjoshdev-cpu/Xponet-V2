@@ -92,11 +92,14 @@ service cloud.firestore {
     match /organizations/{orgId} {
       // Members may read their own org; pending invitees may read it too so
       // the app can show them the invitation to accept or decline.
-      // (Direct field access — not .get() — so list queries filtered with
-      // array-contains on either field are statically provable.)
+      // Kept as TWO separate allow statements (not one ||) so each list query
+      // (array-contains on memberEmails, or on pendingInviteEmails) can be
+      // statically proven against its own statement — the query planner can't
+      // prove a mixed-field disjunction inside a single expression.
       allow read: if isAuthed()
-          && (myEmail() in resource.data.memberEmails
-              || myEmail() in resource.data.pendingInviteEmails);
+          && myEmail() in resource.data.memberEmails;
+      allow read: if isAuthed()
+          && myEmail() in resource.data.pendingInviteEmails;
 
       // Anyone authenticated can create an org (registration flow)
       allow create: if isAuthed();
