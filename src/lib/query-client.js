@@ -3,7 +3,12 @@ import { QueryClient } from '@tanstack/react-query';
 export const queryClientInstance = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: false,
+      // Collaboration freshness: refetch when the user returns to the tab,
+      // and poll visible queries once a minute so other members' edits show
+      // up without a manual reload. Hot collections (tasks) additionally use
+      // live onSnapshot listeners. Polling pauses in background tabs.
+      refetchOnWindowFocus: true,
+      refetchInterval: 60_000,
       // Retry up to 2 times; skip retrying on 4xx client errors
       retry: (failureCount, error) => {
         if (failureCount >= 2) return false;

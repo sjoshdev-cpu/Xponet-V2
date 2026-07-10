@@ -40,27 +40,33 @@ export default function InvitePrompt() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 py-1">
+        <div className="space-y-3 py-2">
           {pendingInvites.map((org) => {
             const invite = (org.pending_invites || []).find(i => i.email === user.email);
             const busy = busyOrgId === org.id;
             return (
-              <div key={org.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="text-xl shrink-0">{org.icon || '🏠'}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{org.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      as {ROLE_LABELS[invite?.role] || invite?.role || 'member'}
-                      {invite?.invited_by ? ` · invited by ${invite.invited_by}` : ''}
+              <div key={org.id} className="rounded-xl border border-border bg-muted/30 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background border border-border text-xl">
+                    {org.icon || '🏠'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{org.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Join as <span className="font-medium text-foreground">{ROLE_LABELS[invite?.role] || invite?.role || 'Member'}</span>
                     </p>
+                    {invite?.invited_by && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        Invited by {invite.invited_by}
+                      </p>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Button size="sm" disabled={busy} onClick={() => handle(org, acceptInvite, 'Accepted')}>
-                    Accept
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" className="flex-1" disabled={busy} onClick={() => handle(org, acceptInvite, 'Accepted')}>
+                    {busy ? 'Working…' : 'Accept invitation'}
                   </Button>
-                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => handle(org, declineInvite, 'Declined')}>
+                  <Button size="sm" variant="outline" className="flex-1" disabled={busy} onClick={() => handle(org, declineInvite, 'Declined')}>
                     Decline
                   </Button>
                 </div>

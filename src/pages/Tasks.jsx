@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Task } from '@/api/firestoreClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -38,7 +38,22 @@ export default function Tasks() {
         ? Task.filter({ org_id: currentOrg?.id })
         : Task.filter({ org_id: currentOrg?.id, assignee_emails: { arrayContains: user?.email } }),
     enabled: !!currentOrg?.id && !!role,
+    // The onSnapshot listener below is the live source of truth
+    refetchInterval: false,
   });
+
+  // Realtime collaboration: subscribe to the same query with onSnapshot and
+  // push every change straight into the react-query cache, so edits made by
+  // other members appear immediately without a refresh.
+  useEffect(() => {
+    if (!currentOrg?.id || !role) return;
+    const filters = canViewAllTasks(role)
+      ? { org_id: currentOrg.id }
+      : { org_id: currentOrg.id, assignee_emails: { arrayContains: user?.email } };
+    return Task.listen(filters, (docs) => {
+      queryClient.setQueryData(['tasks', currentOrg.id, role, user?.email], docs);
+    });
+  }, [currentOrg?.id, role, user?.email, queryClient]);
 
   const createTask = useMutation({
     mutationFn: (data) => Task.create({ ...data, org_id: currentOrg?.id }),

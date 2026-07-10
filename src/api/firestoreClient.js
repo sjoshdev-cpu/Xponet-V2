@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   addDoc,
   setDoc,
   updateDoc,
@@ -45,6 +46,26 @@ function makeEntity(collectionName) {
       const q = constraints.length ? query(colRef(), ...constraints) : colRef();
       const snapshot = await getDocs(q);
       return snapshot.docs.map((d) => convertTimestamps({ id: d.id, ...d.data() }));
+    },
+
+    /**
+     * listen(queryObj, onData, onError?) — realtime version of filter().
+     * Subscribes via onSnapshot and invokes onData with the full mapped
+     * result set on every change. Returns the unsubscribe function.
+     */
+    listen(queryObj = {}, onData, onError) {
+      const constraints = Object.entries(queryObj).map(([key, value]) => {
+        if (value && typeof value === 'object' && 'arrayContains' in value) {
+          return where(key, 'array-contains', value.arrayContains);
+        }
+        return where(key, '==', value);
+      });
+      const q = constraints.length ? query(colRef(), ...constraints) : colRef();
+      return onSnapshot(
+        q,
+        (snapshot) => onData(snapshot.docs.map((d) => convertTimestamps({ id: d.id, ...d.data() }))),
+        onError || ((err) => console.error(`[listen:${collectionName}]`, err)),
+      );
     },
 
     /**
