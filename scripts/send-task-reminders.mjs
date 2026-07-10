@@ -60,6 +60,9 @@ if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !MAIL_FROM) {
 initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore('xponet'); // named database, matches src/lib/firebase.js
 
+// End-of-business deadline for hour-based reminders: 17:00 Lusaka (CAT, UTC+2).
+const EOB_HOUR_UTC = 15;
+
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
   port: Number(SMTP_PORT) || 587,
@@ -86,13 +89,17 @@ function describeWhen(diffDays) {
   return `in ${diffDays} days`;
 }
 
-async function sendReminderEmail(task, assignee, diffDays, orgName) {
-  const when = describeWhen(diffDays);
-  const subject = diffDays === 0
-    ? `Due today: ${task.title}`
-    : diffDays === 1
-      ? `Due tomorrow: ${task.title}`
-      : `Due ${when}: ${task.title}`;
+async function sendReminderEmail(task, assignee, { diffDays, diffHours }, orgName) {
+  const when = diffHours != null
+    ? `in ${diffHours} hour${diffHours === 1 ? '' : 's'}`
+    : describeWhen(diffDays);
+  const subject = diffHours != null
+    ? `Due ${when}: ${task.title}`
+    : diffDays === 0
+      ? `Due today: ${task.title}`
+      : diffDays === 1
+        ? `Due tomorrow: ${task.title}`
+        : `Due ${when}: ${task.title}`;
 
   await transporter.sendMail({
     from: MAIL_FROM,
@@ -121,12 +128,16 @@ async function run() {
   for (const configDoc of configsSnap.docs) {
     const config = configDoc.data();
     const targetHour = config.send_hour_utc ?? 8;
-    if (targetHour !== currentUtcHour) continue;
+
+    // Day-based offsets fire only at the org's configured send hour; hour-based
+    // offsets count down to the deadline, so they're checked on every hourly run.
+    const dayOffsets = targetHour === currentUtcHour
+      ? (Array.isArray(config.offsets_days) ? config.offsets_days : [1])
+      : [];
+    const hourOffsets = Array.isArray(config.offsets_hours) ? config.offsets_hours : [];
+    if (dayOffsets.length === 0 && hourOffsets.length === 0) continue;
 
     const orgId = config.org_id || configDoc.id;
-    const offsets = Array.isArray(config.offsets_days) && config.offsets_days.length
-      ? config.offsets_days
-      : [1];
 
     const [orgSnap, tasksSnap] = await Promise.all([
       db.collection('organizations').doc(orgId).get(),
@@ -143,23 +154,35 @@ async function run() {
 
       const due = new Date(`${task.due_date}T00:00:00Z`);
       const diffDays = Math.round((due - new Date(`${todayStr}T00:00:00Z`)) / 86400000);
-      if (!offsets.includes(diffDays)) continue;
+      // The deadline moment is end of business on the due date:
+      // 17:00 Lusaka (CAT, UTC+2) = 15:00 UTC.
+      const dueMoment = due.getTime() + EOB_HOUR_UTC * 3600000;
+      const diffHours = Math.round((dueMoment - now.getTime()) / 3600000);
 
-      const marker = `${diffDays}:${task.due_date}`;
-      if ((task.reminders_sent || []).includes(marker)) continue;
-
-      for (const assignee of assignees) {
-        if (!assignee.email) continue;
-        try {
-          await sendReminderEmail(task, assignee, diffDays, orgName);
-          totalEmails++;
-        } catch (err) {
-          console.error(`  ✗ Failed to email ${assignee.email} for task "${task.title}": ${err.message}`);
-        }
+      const matches = [];
+      if (dayOffsets.includes(diffDays)) {
+        matches.push({ marker: `${diffDays}:${task.due_date}`, timing: { diffDays }, log: `offset ${diffDays}d` });
+      }
+      if (hourOffsets.includes(diffHours)) {
+        matches.push({ marker: `h${diffHours}:${task.due_date}`, timing: { diffHours }, log: `offset ${diffHours}h` });
       }
 
-      await taskDoc.ref.update({ reminders_sent: FieldValue.arrayUnion(marker) });
-      console.log(`  ✓ Reminder sent for "${task.title}" (${taskDoc.id}) — ${assignees.length} assignee(s), offset ${diffDays}d.`);
+      for (const match of matches) {
+        if ((task.reminders_sent || []).includes(match.marker)) continue;
+
+        for (const assignee of assignees) {
+          if (!assignee.email) continue;
+          try {
+            await sendReminderEmail(task, assignee, match.timing, orgName);
+            totalEmails++;
+          } catch (err) {
+            console.error(`  ✗ Failed to email ${assignee.email} for task "${task.title}": ${err.message}`);
+          }
+        }
+
+        await taskDoc.ref.update({ reminders_sent: FieldValue.arrayUnion(match.marker) });
+        console.log(`  ✓ Reminder sent for "${task.title}" (${taskDoc.id}) — ${assignees.length} assignee(s), ${match.log}.`);
+      }
     }
   }
 

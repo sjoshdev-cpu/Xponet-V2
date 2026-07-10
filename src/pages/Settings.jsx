@@ -86,6 +86,12 @@ export default function Settings() {
     { value: 0, label: 'On the due date' },
   ];
 
+  const HOUR_OFFSET_OPTIONS = [
+    { value: 5, label: '5 hours before' },
+    { value: 3, label: '3 hours before' },
+    { value: 1, label: '1 hour before' },
+  ];
+
   const { data: reminderConfig } = useQuery({
     queryKey: ['reminder-config', currentOrg?.id],
     queryFn: () => ReminderConfig.get(currentOrg.id),
@@ -94,12 +100,14 @@ export default function Settings() {
 
   const [remindersEnabled, setRemindersEnabled] = useState(false);
   const [offsetsDays, setOffsetsDays] = useState([1]);
+  const [offsetsHours, setOffsetsHours] = useState([]);
   const [sendHourUtc, setSendHourUtc] = useState(8);
 
   useEffect(() => {
     if (!reminderConfig) return;
     setRemindersEnabled(!!reminderConfig.enabled);
-    setOffsetsDays(reminderConfig.offsets_days?.length ? reminderConfig.offsets_days : [1]);
+    setOffsetsDays(reminderConfig.offsets_days ?? [1]);
+    setOffsetsHours(reminderConfig.offsets_hours || []);
     setSendHourUtc(reminderConfig.send_hour_utc ?? 8);
   }, [reminderConfig]);
 
@@ -109,11 +117,20 @@ export default function Settings() {
     );
   };
 
+  const toggleHourOffset = (value) => {
+    setOffsetsHours((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value].sort((a, b) => b - a)
+    );
+  };
+
+  const noTimingsSelected = offsetsDays.length === 0 && offsetsHours.length === 0;
+
   const saveReminderConfig = useMutation({
     mutationFn: () => ReminderConfig.upsert(currentOrg.id, {
       org_id: currentOrg.id,
       enabled: remindersEnabled,
       offsets_days: offsetsDays,
+      offsets_hours: offsetsHours,
       send_hour_utc: sendHourUtc,
       updated_by: user?.email,
     }),
@@ -301,6 +318,24 @@ export default function Settings() {
                 </div>
 
                 <div className={cn(!remindersEnabled && 'opacity-50 pointer-events-none')}>
+                  <Label className="mb-2 block">Last-minute reminders</Label>
+                  <div className="space-y-2">
+                    {HOUR_OFFSET_OPTIONS.map(({ value, label }) => (
+                      <label key={value} className="flex items-center gap-2.5 text-sm cursor-pointer">
+                        <Checkbox
+                          checked={offsetsHours.includes(value)}
+                          onCheckedChange={() => toggleHourOffset(value)}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Counted down to end of business on the due date — 17:00 Lusaka time (15:00 UTC) — so they arrive as the deadline approaches. The send time below doesn't apply.
+                  </p>
+                </div>
+
+                <div className={cn(!remindersEnabled && 'opacity-50 pointer-events-none')}>
                   <Label className="mb-1.5 block">Send time</Label>
                   <Select value={String(sendHourUtc)} onValueChange={(v) => setSendHourUtc(Number(v))}>
                     <SelectTrigger className="w-40">
@@ -319,11 +354,11 @@ export default function Settings() {
 
                 <Button
                   onClick={() => saveReminderConfig.mutate()}
-                  disabled={saveReminderConfig.isPending || offsetsDays.length === 0}
+                  disabled={saveReminderConfig.isPending || noTimingsSelected}
                 >
                   Save reminder settings
                 </Button>
-                {remindersEnabled && offsetsDays.length === 0 && (
+                {remindersEnabled && noTimingsSelected && (
                   <p className="text-xs text-destructive">Select at least one timing, or turn reminders off.</p>
                 )}
               </CardContent>
