@@ -110,6 +110,9 @@ export const Database     = makeEntity('databases');
 export const DatabaseRecord = makeEntity('records');
 export const DatabaseView = makeEntity('db_views');
 export const ReminderConfig = makeEntity('reminder_configs');
+// Outbound email queue — client may only create (see firestore.rules); the
+// scheduled GitHub Action drains it and actually sends via SMTP.
+export const Mail = makeEntity('mail');
 
 /**
  * withLastEditedBy(payload, user) — wraps any Page update payload with

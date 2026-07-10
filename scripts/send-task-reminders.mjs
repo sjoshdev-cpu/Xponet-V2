@@ -189,5 +189,42 @@ async function run() {
   console.log(`Done. ${totalEmails} email(s) sent.`);
 }
 
+/**
+ * Drains the `mail` collection — the outbound queue that the web client
+ * enqueues into (e.g. workspace invitation emails; see firestore.rules).
+ * Docs are marked sent (or errored) rather than deleted, for auditability.
+ */
+async function flushMailQueue() {
+  const pendingSnap = await db.collection('mail').where('status', '==', 'pending').get();
+  if (pendingSnap.empty) {
+    console.log('Mail queue: empty.');
+    return;
+  }
+  console.log(`Mail queue: ${pendingSnap.size} message(s) to send.`);
+
+  for (const mailDoc of pendingSnap.docs) {
+    const mail = mailDoc.data();
+    try {
+      await transporter.sendMail({
+        from: MAIL_FROM,
+        to: mail.to,
+        subject: mail.subject,
+        text: mail.text || undefined,
+        html: mail.html || undefined,
+      });
+      await mailDoc.ref.update({ status: 'sent', sent_at: FieldValue.serverTimestamp() });
+      console.log(`  ✓ Sent "${mail.subject}" to ${mail.to}`);
+    } catch (err) {
+      await mailDoc.ref.update({
+        status: 'error',
+        error: String(err.message || err),
+        errored_at: FieldValue.serverTimestamp(),
+      });
+      console.error(`  ✗ Failed "${mail.subject}" to ${mail.to}: ${err.message}`);
+    }
+  }
+}
+
 await run();
+await flushMailQueue();
 process.exit(0);

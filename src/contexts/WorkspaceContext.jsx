@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useAuth } from '@/lib/AuthContext';
 import { Organization, Page } from '@/api/firestoreClient';
 import { seedDocumentHub } from '@/api/seedDocumentHub';
-import { buildMemberFields, getRole } from '@/lib/permissions';
+import { buildMemberFields, buildInviteFields, getRole } from '@/lib/permissions';
 
 const WorkspaceContext = createContext(null);
 
@@ -17,6 +17,7 @@ export function WorkspaceProvider({ children }) {
 
   const [currentOrg, setCurrentOrg] = useState(null);
   const [orgs, setOrgs] = useState([]);
+  const [pendingInvites, setPendingInvites] = useState([]); // orgs inviting this user
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
@@ -62,7 +63,11 @@ export function WorkspaceProvider({ children }) {
     }
     setLoading(true);
 
-    let userOrgs = await Organization.filter({ memberEmails: { arrayContains: firebaseUser.email } });
+    let [userOrgs, invitingOrgs] = await Promise.all([
+      Organization.filter({ memberEmails: { arrayContains: firebaseUser.email } }),
+      Organization.filter({ pendingInviteEmails: { arrayContains: firebaseUser.email } }),
+    ]);
+    setPendingInvites(invitingOrgs);
 
     if (userOrgs.length === 0) {
       const newOrg = await Organization.create({
@@ -129,19 +134,52 @@ export function WorkspaceProvider({ children }) {
 
   const refreshOrgs = useCallback(async () => {
     if (!firebaseUser) return;
-    const userOrgs = await Organization.filter({ memberEmails: { arrayContains: firebaseUser.email } });
+    const [userOrgs, invitingOrgs] = await Promise.all([
+      Organization.filter({ memberEmails: { arrayContains: firebaseUser.email } }),
+      Organization.filter({ pendingInviteEmails: { arrayContains: firebaseUser.email } }),
+    ]);
     setOrgs(userOrgs);
+    setPendingInvites(invitingOrgs);
     if (currentOrg) {
       const updated = userOrgs.find(o => o.id === currentOrg.id);
       if (updated) setCurrentOrg(updated);
     }
   }, [firebaseUser, currentOrg]);
 
+  /**
+   * Accept a workspace invitation: move self from the org's pending-invite
+   * fields into the member fields, at exactly the invited role. The security
+   * rules only permit this precise transition (see firestore.rules).
+   */
+  const acceptInvite = useCallback(async (org) => {
+    const invite = (org.pending_invites || []).find(i => i.email === firebaseUser.email);
+    if (!invite) return;
+    const members = [
+      ...(org.members || []),
+      { email: firebaseUser.email, role: invite.role, full_name: firebaseUser.displayName || '' },
+    ];
+    const invites = (org.pending_invites || []).filter(i => i.email !== firebaseUser.email);
+    await Organization.update(org.id, {
+      ...buildMemberFields(members),
+      ...buildInviteFields(invites),
+    });
+    setPendingInvites(prev => prev.filter(o => o.id !== org.id));
+    await refreshOrgs();
+  }, [firebaseUser, refreshOrgs]);
+
+  /** Decline an invitation: remove self from the pending lists, nothing else. */
+  const declineInvite = useCallback(async (org) => {
+    const invites = (org.pending_invites || []).filter(i => i.email !== firebaseUser.email);
+    await Organization.update(org.id, buildInviteFields(invites));
+    setPendingInvites(prev => prev.filter(o => o.id !== org.id));
+  }, [firebaseUser]);
+
   const role = getRole(currentOrg, user?.email);
 
   return (
     <WorkspaceContext.Provider value={{
       user, currentOrg, orgs, loading, role,
+      pendingInvites, acceptInvite, declineInvite,
       sidebarOpen, setSidebarOpen,
       theme, setTheme,
       switchOrg, refreshOrgs, initWorkspace

@@ -55,3 +55,18 @@ export function buildMemberFields(members) {
   list.forEach((m) => { if (m.email) memberRoles[m.email] = m.role; });
   return { members: list, memberEmails, memberRoles };
 }
+
+/**
+ * Same idea for pending invitations: `pending_invites` is the rich list shown
+ * in Settings, while `pendingInviteEmails` / `pendingInviteRoles` are the flat
+ * projections the security rules check when an invitee reads the org or
+ * accepts their invite. Invitees are NOT members — they gain no access until
+ * they accept and are moved into the member fields.
+ */
+export function buildInviteFields(invites) {
+  const list = invites || [];
+  const pendingInviteEmails = list.map((i) => i.email).filter(Boolean);
+  const pendingInviteRoles = {};
+  list.forEach((i) => { if (i.email) pendingInviteRoles[i.email] = i.role; });
+  return { pending_invites: list, pendingInviteEmails, pendingInviteRoles };
+}

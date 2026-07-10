@@ -7,6 +7,7 @@ import CommandPalette from './CommandPalette';
 import QuickAddTask from '@/components/tasks/QuickAddTask';
 import OfflineBanner from '@/components/OfflineBanner';
 import RetryIndicator from '@/components/RetryIndicator';
+import InvitePrompt from '@/components/InvitePrompt';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -93,6 +94,7 @@ export default function WorkspaceLayout() {
     <div className="flex h-screen overflow-hidden bg-background">
       <OfflineBanner />
       <RetryIndicator />
+      <InvitePrompt />
       {/* Mobile overlay */}
       {isMobile && sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setSidebarOpen(false)} />

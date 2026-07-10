@@ -65,10 +65,38 @@ service cloud.firestore {
 
     // ─── Organizations ───────────────────────────────────────────────────────
 
+    // Is the calling user on an org document's pending-invite list?
+    function isPendingInvitee(data) {
+      return myEmail() in data.get('pendingInviteEmails', []);
+    }
+
+    // Invite acceptance/decline: the pending lists must shrink by exactly the
+    // caller — nobody else's invite may be touched.
+    function removesOnlySelfFromPending(existingData, newData) {
+      return isPendingInvitee(existingData)
+          && !(myEmail() in newData.get('pendingInviteEmails', []))
+          && existingData.pendingInviteEmails.hasAll(newData.get('pendingInviteEmails', []))
+          && newData.get('pendingInviteEmails', []).size() == existingData.pendingInviteEmails.size() - 1;
+    }
+
+    // Accept: membership grows by exactly the caller, at exactly the role
+    // they were invited with (no self-escalation to admin).
+    function addsOnlySelfAsMember(existingData, newData) {
+      return !(myEmail() in existingData.memberEmails)
+          && myEmail() in newData.memberEmails
+          && newData.memberEmails.hasAll(existingData.memberEmails)
+          && newData.memberEmails.size() == existingData.memberEmails.size() + 1
+          && newData.memberRoles[myEmail()] == existingData.pendingInviteRoles[myEmail()];
+    }
+
     match /organizations/{orgId} {
-      // Only members may read their own org
+      // Members may read their own org; pending invitees may read it too so
+      // the app can show them the invitation to accept or decline.
+      // (Direct field access — not .get() — so list queries filtered with
+      // array-contains on either field are statically provable.)
       allow read: if isAuthed()
-          && myEmail() in resource.data.memberEmails;
+          && (myEmail() in resource.data.memberEmails
+              || myEmail() in resource.data.pendingInviteEmails);
 
       // Anyone authenticated can create an org (registration flow)
       allow create: if isAuthed();
@@ -78,6 +106,15 @@ service cloud.firestore {
       allow update: if isAuthed()
           && myEmail() in resource.data.memberEmails
           && myEmail() in request.resource.data.memberEmails;
+
+      // A pending invitee may update the org ONLY to resolve their own invite:
+      // decline (membership unchanged) or accept (adds exactly themselves at
+      // the invited role). The owner never changes.
+      allow update: if isAuthed()
+          && removesOnlySelfFromPending(resource.data, request.resource.data)
+          && request.resource.data.owner_email == resource.data.owner_email
+          && (request.resource.data.memberEmails == resource.data.memberEmails
+              || addsOnlySelfAsMember(resource.data, request.resource.data));
 
       // Orgs are never deleted from the client
       allow delete: if false;
@@ -153,12 +190,20 @@ service cloud.firestore {
     }
 
     // ─── Mail queue ─────────────────────────────────────────────────────────
-    // Written only by the scheduled Cloud Function via the Admin SDK, which
-    // bypasses these rules entirely — this collection is never meant to be
-    // reachable from client code, so deny everyone explicitly.
+    // Outbound email queue. Org members may ENQUEUE messages (e.g. workspace
+    // invitations); the scheduled GitHub Action drains the queue with the
+    // Admin SDK (which bypasses these rules). Clients can never read, edit,
+    // or delete queued mail — so the queue can't be used to snoop addresses
+    // or forge/alter someone else's pending messages.
 
     match /mail/{mailId} {
-      allow read, write: if false;
+      allow create: if isAuthed()
+          && hasString(request.resource.data, 'org_id')
+          && isOrgMember(request.resource.data.org_id)
+          && hasString(request.resource.data, 'to')
+          && hasString(request.resource.data, 'subject')
+          && hasString(request.resource.data, 'text');
+      allow read, update, delete: if false;
     }
 
     // ─── Tickets ────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Organization, Notification, ReminderConfig } from '@/api/firestoreClient';
+import { Organization, Notification, ReminderConfig, Mail } from '@/api/firestoreClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -9,13 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { UserPlus, Trash2, Sun, Moon, Monitor, Bell, User, Building2, Palette } from 'lucide-react';
+import { UserPlus, Trash2, Sun, Moon, Monitor, Bell, User, Building2, Palette, Mail as MailIcon, RotateCw, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import PageHeader from '@/components/layout/PageHeader';
-import { ROLES, ROLE_LABELS, ASSIGNABLE_ROLES, canChangeRole, buildMemberFields } from '@/lib/permissions';
+import { ROLES, ROLE_LABELS, ASSIGNABLE_ROLES, canChangeRole, buildMemberFields, buildInviteFields } from '@/lib/permissions';
 
 export default function Settings() {
   const { user, currentOrg, theme, setTheme, refreshOrgs, role } = useWorkspace();
@@ -30,14 +30,59 @@ export default function Settings() {
     onSuccess: () => { refreshOrgs(); toast.success('Workspace updated'); }
   });
 
-  const inviteMember = async () => {
-    if (!inviteEmail) return;
-    const members = [...(currentOrg.members || []), { email: inviteEmail, role: inviteRole, full_name: '' }];
-    await Organization.update(currentOrg.id, buildMemberFields(members));
+  /**
+   * Queues the invitation email in the `mail` collection. The scheduled
+   * GitHub Action (scripts/send-task-reminders.mjs) drains the queue via the
+   * Admin SDK and delivers over SMTP — clients cannot send email directly.
+   */
+  const queueInviteEmail = (email, invRole) => {
+    const inviter = user.full_name || user.email;
+    const appUrl = window.location.origin;
+    return Mail.create({
+      org_id: currentOrg.id,
+      type: 'invite',
+      status: 'pending',
+      to: email,
+      subject: `${inviter} invited you to "${currentOrg.name}" on Xponet`,
+      text:
+        `${inviter} has invited you to join the workspace "${currentOrg.name}" on Xponet as ${ROLE_LABELS[invRole] || invRole}.\n\n` +
+        `To accept, open ${appUrl} and sign in (or create an account) with this email address — ` +
+        `you'll see the invitation waiting for you.\n\n` +
+        `If you weren't expecting this, you can ignore this email.`,
+      html:
+        `<p><strong>${inviter}</strong> has invited you to join the workspace ` +
+        `<strong>"${currentOrg.name}"</strong> on Xponet as <strong>${ROLE_LABELS[invRole] || invRole}</strong>.</p>` +
+        `<p>To accept, <a href="${appUrl}">open Xponet</a> and sign in (or create an account) ` +
+        `with this email address — you'll see the invitation waiting for you.</p>` +
+        `<p style="color:#888">If you weren't expecting this, you can ignore this email.</p>`,
+    });
+  };
 
-    // Send notification
+  const inviteMember = async () => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) return;
+    if ((currentOrg.members || []).some((m) => m.email === email)) {
+      toast.error('That person is already a member');
+      return;
+    }
+    if ((currentOrg.pending_invites || []).some((i) => i.email === email)) {
+      toast.error('An invitation is already pending for that email');
+      return;
+    }
+
+    // Invitees are NOT added to members yet — they appear as "Invitation
+    // sent" until they accept from their own account (see WorkspaceContext).
+    const invites = [
+      ...(currentOrg.pending_invites || []),
+      { email, role: inviteRole, invited_by: user.email, invited_at: new Date().toISOString() },
+    ];
+    await Organization.update(currentOrg.id, buildInviteFields(invites));
+
+    await queueInviteEmail(email, inviteRole);
+
+    // In-app notification too, in case they already use Xponet
     await Notification.create({
-      recipient_email: inviteEmail,
+      recipient_email: email,
       type: 'invited',
       title: `You've been invited to ${currentOrg.name}`,
       body: `${user.full_name} invited you as ${inviteRole}`,
@@ -48,7 +93,19 @@ export default function Settings() {
 
     refreshOrgs();
     setInviteEmail('');
-    toast.success(`Invited ${inviteEmail}`);
+    toast.success(`Invitation sent to ${email}`);
+  };
+
+  const cancelInvite = async (email) => {
+    const invites = (currentOrg.pending_invites || []).filter((i) => i.email !== email);
+    await Organization.update(currentOrg.id, buildInviteFields(invites));
+    refreshOrgs();
+    toast.success('Invitation cancelled');
+  };
+
+  const resendInvite = async (invite) => {
+    await queueInviteEmail(invite.email, invite.role);
+    toast.success(`Invitation email re-queued for ${invite.email}`);
   };
 
   const removeMember = async (email) => {
@@ -216,7 +273,11 @@ export default function Settings() {
             <Card>
               <CardHeader>
                 <CardTitle>Members</CardTitle>
-                <CardDescription>{(currentOrg?.members || []).length} member(s)</CardDescription>
+                <CardDescription>
+                  {(currentOrg?.members || []).length} member(s)
+                  {(currentOrg?.pending_invites || []).length > 0 &&
+                    ` · ${(currentOrg?.pending_invites || []).length} invitation(s) pending`}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {isAdmin && (
@@ -256,6 +317,9 @@ export default function Settings() {
                           <p className="text-xs text-muted-foreground">{member.email}</p>
                         </div>
                         <div className="flex items-center gap-2">
+                          <Badge className="text-[10px] bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-950 dark:text-green-300 border-0">
+                            Joined
+                          </Badge>
                           {canEditThisRole ? (
                             <Select value={member.role} onValueChange={(v) => changeRole(member.email, v)}>
                               <SelectTrigger className="h-7 w-[110px] text-xs">
@@ -280,6 +344,37 @@ export default function Settings() {
                       </div>
                     );
                   })}
+
+                  {/* Pending invitations — not members until they accept */}
+                  {(currentOrg?.pending_invites || []).map((invite) => (
+                    <div key={invite.email} className="flex items-center justify-between p-3 rounded-lg border border-dashed border-border bg-muted/30">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <MailIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{invite.email}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Invited as {ROLE_LABELS[invite.role] || invite.role}
+                            {invite.invited_by ? ` by ${invite.invited_by}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge className="text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300 border-0">
+                          Invitation sent
+                        </Badge>
+                        {isAdmin && (
+                          <>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Resend invitation email" onClick={() => resendInvite(invite)}>
+                              <RotateCw className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Cancel invitation" onClick={() => cancelInvite(invite.email)}>
+                              <X className="h-3.5 w-3.5 text-destructive" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
