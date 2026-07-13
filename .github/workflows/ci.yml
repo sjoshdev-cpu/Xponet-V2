@@ -18,7 +18,10 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # npm install rather than npm ci: the lockfile is generated on Windows
+        # and npm cannot fully refresh os-gated optional subtrees there, which
+        # makes 'npm ci' reject the lock on Linux (missing @emnapi/* entries).
+        run: npm install --no-audit --no-fund
 
       - name: Lint (errors fail; warnings are tracked debt)
         run: npx eslint src
