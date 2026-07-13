@@ -39,7 +39,7 @@ export function applySorts(records, sorts) {
     for (const s of sorts) {
       const va = a.properties?.[s.property] ?? '';
       const vb = b.properties?.[s.property] ?? '';
-      let cmp = 0;
+      let cmp;
       if (typeof va === 'number' && typeof vb === 'number') {
         cmp = va - vb;
       } else {
@@ -170,8 +170,8 @@ function evalCondition(cond) {
       const l = evalExpr(cond.slice(0, idx).trim());
       const r = evalExpr(cond.slice(idx + op.length).trim());
       switch (op) {
-        case '==': return l == r;   // eslint-disable-line eqeqeq
-        case '!=': return l != r;   // eslint-disable-line eqeqeq
+        case '==': return l == r;    
+        case '!=': return l != r;    
         case '>':  return Number(l) > Number(r);
         case '<':  return Number(l) < Number(r);
         case '>=': return Number(l) >= Number(r);

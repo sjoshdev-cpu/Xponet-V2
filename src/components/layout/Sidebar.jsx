@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { canAccessCommandCenter } from '@/lib/permissions';
 import { getPageRoute } from '@/lib/pageRouter';
 import WorkspaceSwitcher from './WorkspaceSwitcher';
+import { useLiveCollection } from '@/hooks/useLiveCollection';
 
 // Flat, non-recursive page row — rendered by the virtualizer
 function PageRow({ page, level, hasChildren, isExpanded, activePath, onToggle, onCreateChild, onDelete, onRename, onFavorite, databases }) {
@@ -163,14 +164,23 @@ export default function Sidebar({ onOpenSearch }) {
   const { data: pages = [] } = useQuery({
     queryKey: ['pages', currentOrg?.id],
     queryFn: () => Page.filter({ org_id: currentOrg?.id }),
-    enabled: !!currentOrg?.id
+    enabled: !!currentOrg?.id,
+    refetchInterval: false, // live listener below keeps this fresh
   });
+  useLiveCollection(Page, { org_id: currentOrg?.id }, ['pages', currentOrg?.id], !!currentOrg?.id);
 
   const { data: notifications = [] } = useQuery({
     queryKey: ['notifications', user?.email],
     queryFn: () => Notification.filter({ recipient_email: user?.email, is_read: false }),
-    enabled: !!user?.email
+    enabled: !!user?.email,
+    refetchInterval: false, // live listener below keeps this fresh
   });
+  useLiveCollection(
+    Notification,
+    { recipient_email: user?.email, is_read: false },
+    ['notifications', user?.email],
+    !!user?.email,
+  );
 
   // Fetch all databases so page rows can route any database page correctly
   const { data: databases = [] } = useQuery({

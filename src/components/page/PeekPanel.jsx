@@ -76,7 +76,7 @@ export default function PeekPanel() {
 
   const debouncedSave = useCallback(
     _.debounce((data) => saveMutation.mutate(data), 800),
-    [peekPageId], // eslint-disable-line react-hooks/exhaustive-deps
+    [peekPageId],  
   );
 
   const handleTitleChange = (e) => {

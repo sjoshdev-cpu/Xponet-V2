@@ -6,6 +6,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Ticket } from '@/api/firestoreClient';
+import { useLiveCollection } from '@/hooks/useLiveCollection';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import PageHeader from '@/components/layout/PageHeader';
@@ -351,7 +352,9 @@ export default function Tickets() {
     queryKey: ['tickets', currentOrg?.id],
     queryFn: () => Ticket.filter({ org_id: currentOrg?.id }),
     enabled: !!currentOrg?.id,
+    refetchInterval: false, // live listener keeps this fresh
   });
+  useLiveCollection(Ticket, { org_id: currentOrg?.id }, ['tickets', currentOrg?.id], !!currentOrg?.id);
 
   const filtered = useMemo(() => {
     let list = tickets;

@@ -11,10 +11,22 @@ import {
   deleteDoc,
   query,
   where,
+  orderBy,
+  limit as fsLimit,
   arrayUnion,
   arrayRemove,
   serverTimestamp,
+  runTransaction,
 } from 'firebase/firestore';
+
+/** Thrown by updateGuarded when the document changed since it was loaded. */
+export class ConflictError extends Error {
+  constructor(currentData) {
+    super('Document was modified by someone else since it was loaded');
+    this.name = 'ConflictError';
+    this.currentData = currentData;
+  }
+}
 
 function makeEntity(collectionName) {
   const colRef = () => collection(db, collectionName);
@@ -31,18 +43,24 @@ function makeEntity(collectionName) {
 
   return {
     /**
-     * filter(queryObj) — converts a flat { key: value } object into Firestore
-     * where() clauses. Returns an array of { id, ...data } documents.
+     * filter(queryObj, opts?) — converts a flat { key: value } object into
+     * Firestore where() clauses. Returns an array of { id, ...data } docs.
      * Pass { field: { arrayContains: value } } for an array-contains clause
      * (e.g. filtering tasks where assignee_emails contains the current user).
+     *
+     * opts: { limit: number, orderBy: [field, 'asc'|'desc'] } — cap result
+     * size on collections that grow unbounded (notifications, audit trails).
+     * Note: orderBy combined with where clauses may need a composite index.
      */
-    async filter(queryObj = {}) {
+    async filter(queryObj = {}, opts = {}) {
       const constraints = Object.entries(queryObj).map(([key, value]) => {
         if (value && typeof value === 'object' && 'arrayContains' in value) {
           return where(key, 'array-contains', value.arrayContains);
         }
         return where(key, '==', value);
       });
+      if (opts.orderBy) constraints.push(orderBy(opts.orderBy[0], opts.orderBy[1] || 'asc'));
+      if (opts.limit) constraints.push(fsLimit(opts.limit));
       const q = constraints.length ? query(colRef(), ...constraints) : colRef();
       const snapshot = await getDocs(q);
       return snapshot.docs.map((d) => convertTimestamps({ id: d.id, ...d.data() }));
@@ -99,6 +117,37 @@ function makeEntity(collectionName) {
     async update(id, data) {
       const ref = doc(db, collectionName, id);
       await updateDoc(ref, { ...data, updated_at: serverTimestamp() });
+    },
+
+    /**
+     * updateGuarded(id, data, expectedUpdatedAt) — like update(), but aborts
+     * with ConflictError if the document's updated_at no longer matches what
+     * the caller loaded. Prevents last-write-wins clobbering when two people
+     * edit the same document (e.g. concurrent page edits).
+     *
+     * expectedUpdatedAt: the Date the caller received from filter()/get()
+     * (already converted from Timestamp), or null/undefined to skip the check.
+     */
+    async updateGuarded(id, data, expectedUpdatedAt) {
+      const ref = doc(db, collectionName, id);
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        if (expectedUpdatedAt && snap.exists()) {
+          const current = snap.data().updated_at;
+          const currentMs = current?.toMillis?.() ?? 0;
+          const expectedMs = expectedUpdatedAt instanceof Date
+            ? expectedUpdatedAt.getTime()
+            : new Date(expectedUpdatedAt).getTime();
+          if (currentMs > expectedMs) {
+            throw new ConflictError(convertTimestamps({ id: snap.id, ...snap.data() }));
+          }
+        }
+        tx.update(ref, { ...data, updated_at: serverTimestamp() });
+      });
+      // Return the committed doc so callers can refresh their updated_at
+      // baseline (needed for the next guarded save to not self-conflict).
+      const committed = await getDoc(doc(db, collectionName, id));
+      return convertTimestamps({ id: committed.id, ...committed.data() });
     },
 
     /**

@@ -98,7 +98,7 @@ export default function SharedPage() {
     );
   }
 
-  let blocks = [];
+  let blocks;
   try { blocks = JSON.parse(page.content || '[]'); } catch { blocks = []; }
   const fontStyle = page.font_style || 'sans';
   const isGradient = page.cover_url?.startsWith('linear-gradient');

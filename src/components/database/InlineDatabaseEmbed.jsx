@@ -139,7 +139,6 @@ function SetupPicker({ block, onChange, orgId }) {
     } else {
       // Called as createDb(template) — shift arg
       template = e ?? null;
-      e = null;
     }
     if (!orgId) {
       toast.error('No workspace selected. Please reload the page.');

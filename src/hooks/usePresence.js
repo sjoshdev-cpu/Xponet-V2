@@ -27,8 +27,8 @@ const TWO_MINUTES_MS = 2 * 60 * 1000;
  * @returns {{ viewers: Array<{uid, displayName, photoURL, email, status}> }}
  */
 export function usePresence(entityType, entityId, status = 'viewing') {
-  const { user, currentOrganization } = useWorkspace();
-  const orgId = currentOrganization?.id;
+  const { user, currentOrg } = useWorkspace();
+  const orgId = currentOrg?.id;
   const [viewers, setViewers] = useState([]);
 
   // Always-current status ref so the interval can read the latest value.

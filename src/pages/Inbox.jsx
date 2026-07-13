@@ -105,7 +105,8 @@ export default function Inbox() {
 
   const { data: notifications = [] } = useQuery({
     queryKey: ['notifications-all', user?.email],
-    queryFn: () => Notification.filter({ recipient_email: user?.email }),
+    // Cap the read — this collection grows forever; nobody scrolls past 200.
+    queryFn: () => Notification.filter({ recipient_email: user?.email }, { limit: 200 }),
     enabled: !!user?.email,
   });
 

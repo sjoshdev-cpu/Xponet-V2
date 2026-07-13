@@ -60,8 +60,9 @@ if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !MAIL_FROM) {
 initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore('xponet'); // named database, matches src/lib/firebase.js
 
-// End-of-business deadline for hour-based reminders: 17:00 Lusaka (CAT, UTC+2).
-const EOB_HOUR_UTC = 15;
+// Default end-of-business deadline for hour-based reminders: 17:00 Lusaka
+// (CAT, UTC+2). Orgs can override via reminder_configs.eob_hour_utc.
+const DEFAULT_EOB_HOUR_UTC = 15;
 
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
@@ -154,9 +155,12 @@ async function run() {
 
       const due = new Date(`${task.due_date}T00:00:00Z`);
       const diffDays = Math.round((due - new Date(`${todayStr}T00:00:00Z`)) / 86400000);
-      // The deadline moment is end of business on the due date:
-      // 17:00 Lusaka (CAT, UTC+2) = 15:00 UTC.
-      const dueMoment = due.getTime() + EOB_HOUR_UTC * 3600000;
+      // The deadline moment is end of business on the due date (per-org
+      // configurable; defaults to 17:00 Lusaka = 15:00 UTC).
+      const eobHourUtc = Number.isFinite(config.eob_hour_utc)
+        ? config.eob_hour_utc
+        : DEFAULT_EOB_HOUR_UTC;
+      const dueMoment = due.getTime() + eobHourUtc * 3600000;
       const diffHours = Math.round((dueMoment - now.getTime()) / 3600000);
 
       const matches = [];

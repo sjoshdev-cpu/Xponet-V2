@@ -104,11 +104,37 @@ service cloud.firestore {
       // Anyone authenticated can create an org (registration flow)
       allow create: if isAuthed();
 
-      // Members may update; they cannot remove themselves from memberEmails
-      // to prevent accidental self-lock-out (but not a hard security requirement)
+      // Non-admin members may update the org ONLY if every membership-
+      // sensitive field is left untouched — otherwise any member could
+      // grant themselves admin or remove teammates from the console.
       allow update: if isAuthed()
           && myEmail() in resource.data.memberEmails
-          && myEmail() in request.resource.data.memberEmails;
+          && request.resource.data.owner_email == resource.data.owner_email
+          && request.resource.data.memberEmails == resource.data.memberEmails
+          && request.resource.data.memberRoles == resource.data.memberRoles
+          && request.resource.data.members == resource.data.members
+          && request.resource.data.get('pendingInviteEmails', []) == resource.data.get('pendingInviteEmails', [])
+          && request.resource.data.get('pendingInviteRoles', {}) == resource.data.get('pendingInviteRoles', {})
+          && request.resource.data.get('pending_invites', []) == resource.data.get('pending_invites', []);
+
+      // Admins may manage membership and invites; they cannot remove
+      // themselves from memberEmails (self-lock-out guard) or reassign
+      // the owner.
+      allow update: if isAuthed()
+          && resource.data.memberRoles[myEmail()] == 'admin'
+          && myEmail() in request.resource.data.memberEmails
+          && request.resource.data.owner_email == resource.data.owner_email;
+
+      // Supervisors may edit roles (the UI limits them to promoting members
+      // to supervisor) but cannot add/remove people, change their own role,
+      // touch invites, or reassign the owner.
+      allow update: if isAuthed()
+          && resource.data.memberRoles[myEmail()] == 'supervisor'
+          && request.resource.data.owner_email == resource.data.owner_email
+          && request.resource.data.memberEmails == resource.data.memberEmails
+          && request.resource.data.memberRoles[myEmail()] == 'supervisor'
+          && request.resource.data.get('pendingInviteEmails', []) == resource.data.get('pendingInviteEmails', [])
+          && request.resource.data.get('pending_invites', []) == resource.data.get('pending_invites', []);
 
       // A pending invitee may update the org ONLY to resolve their own invite:
       // decline (membership unchanged) or accept (adds exactly themselves at
@@ -288,8 +314,10 @@ service cloud.firestore {
     }
 
     // ─── Presence (ephemeral) ───────────────────────────────────────────────
+    // usePresence writes presence/{orgId}/{entityType}/{entityId}/users/{uid}
+    // (entityType: 'page' | 'ticket' | 'database').
 
-    match /presence/{pageId}/viewers/{userId} {
+    match /presence/{orgId}/{entityType}/{entityId}/users/{userId} {
       allow read:  if isAuthed();
       allow write: if isAuthed() && request.auth.uid == userId;
     }

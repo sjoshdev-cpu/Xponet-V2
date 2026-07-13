@@ -18,6 +18,7 @@ import {
 import { Database, DatabaseRecord, DatabaseView, setDatabaseRowBody } from '@/api/firestoreClient.js';
 import { seedDatabaseViews } from '@/api/seedDocumentHub.js';
 import { useWorkspace } from '@/contexts/WorkspaceContext.jsx';
+import { useLiveCollection } from '@/hooks/useLiveCollection';
 import { logAuditEvent, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { usePresence } from '@/hooks/usePresence';
 import { PresenceAvatars } from '@/components/PresenceAvatars';
@@ -54,7 +55,9 @@ export default function DatabaseDetail() {
     queryKey: ['records', dbId],
     queryFn: () => DatabaseRecord.filter({ database_id: dbId }),
     enabled: !!dbId,
+    refetchInterval: false, // live listener keeps this fresh
   });
+  useLiveCollection(DatabaseRecord, { database_id: dbId }, ['records', dbId], !!dbId);
 
   const { data: views = [], isLoading: viewsLoading } = useQuery({
     queryKey: ['db_views', dbId],
@@ -129,7 +132,7 @@ export default function DatabaseDetail() {
 
   const { mutate: deleteRecord } = useMutation({
     mutationFn: (id) => DatabaseRecord.delete(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ['records', dbId] });
       if (selectedRecord?.id === id) setSelectedRecord(null);
     },

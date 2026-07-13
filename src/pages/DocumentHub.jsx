@@ -106,7 +106,7 @@ function applyHubSorts(records, sorts) {
     for (const s of sorts) {
       const va = getRecordValue(a, s.propertyKey);
       const vb = getRecordValue(b, s.propertyKey);
-      let cmp = 0;
+      let cmp;
       if (va instanceof Date && vb instanceof Date) {
         cmp = va.getTime() - vb.getTime();
       } else if (va == null && vb == null) {

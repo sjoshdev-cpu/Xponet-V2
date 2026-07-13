@@ -57,7 +57,7 @@ export function renderContent(raw) {
     );
     remaining = remaining.slice(idx + tag.length);
   }
-  if (remaining) parts.push(<span key={key++}>{remaining}</span>);
+  if (remaining) parts.push(<span key={`tail-${key}`}>{remaining}</span>);
   return parts.length > 0 ? <>{parts}</> : <>{text}</>;
 }
 

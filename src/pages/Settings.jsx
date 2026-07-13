@@ -159,6 +159,7 @@ export default function Settings() {
   const [offsetsDays, setOffsetsDays] = useState([1]);
   const [offsetsHours, setOffsetsHours] = useState([]);
   const [sendHourUtc, setSendHourUtc] = useState(8);
+  const [eobHourUtc, setEobHourUtc] = useState(15);
 
   useEffect(() => {
     if (!reminderConfig) return;
@@ -166,6 +167,7 @@ export default function Settings() {
     setOffsetsDays(reminderConfig.offsets_days ?? [1]);
     setOffsetsHours(reminderConfig.offsets_hours || []);
     setSendHourUtc(reminderConfig.send_hour_utc ?? 8);
+    setEobHourUtc(reminderConfig.eob_hour_utc ?? 15);
   }, [reminderConfig]);
 
   const toggleOffset = (value) => {
@@ -189,6 +191,7 @@ export default function Settings() {
       offsets_days: offsetsDays,
       offsets_hours: offsetsHours,
       send_hour_utc: sendHourUtc,
+      eob_hour_utc: eobHourUtc,
       updated_by: user?.email,
     }),
     onSuccess: () => {
@@ -444,6 +447,23 @@ export default function Settings() {
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1.5">
                     Times are in UTC. Lusaka (CAT) is UTC+2 — e.g. 06:00 UTC = 08:00 CAT.
+                  </p>
+                </div>
+
+                <div className={cn(!remindersEnabled && 'opacity-50 pointer-events-none')}>
+                  <Label className="mb-1.5 block">End of business (deadline for hour-based reminders)</Label>
+                  <Select value={String(eobHourUtc)} onValueChange={(v) => setEobHourUtc(Number(v))}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <SelectItem key={h} value={String(h)}>{String(h).padStart(2, '0')}:00 UTC</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    "3 hours before" counts down to this hour on the due date. 15:00 UTC = 17:00 CAT.
                   </p>
                 </div>
 

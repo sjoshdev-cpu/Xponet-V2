@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { Page } from '@/api/firestoreClient';
@@ -118,9 +118,18 @@ export default function WorkspaceLayout() {
         </div>
       )}
 
-      {/* Main content */}
+      {/* Main content — inner Suspense keeps the sidebar visible while a
+           lazily-loaded route chunk is fetched */}
       <main className="flex-1 overflow-y-auto">
-        <Outlet />
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center h-full">
+              <div className="w-6 h-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+            </div>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </main>
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} onNewTask={() => setQuickTaskOpen(true)} onNewPage={handleNewPage} />

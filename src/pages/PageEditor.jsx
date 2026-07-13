@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Page, Comment, DatabaseRecord, withLastEditedBy, addUserRecentPage } from '@/api/firestoreClient';
+import { Page, Comment, DatabaseRecord, withLastEditedBy, addUserRecentPage, ConflictError } from '@/api/firestoreClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import BlockRenderer from '@/components/editor/BlockRenderer';
@@ -246,7 +246,13 @@ export default function PageEditor() {
 
   const saveMutation = useMutation({
     mutationFn: async (data) => {
-      await Page.update(pageId, data);
+      if ('content' in data) {
+        // Guarded: refuses to clobber a newer revision saved by someone else
+        const fresh = await Page.updateGuarded(pageId, data, lastSyncedAtRef.current);
+        lastSyncedAtRef.current = fresh?.updated_at ?? lastSyncedAtRef.current;
+      } else {
+        await Page.update(pageId, data);
+      }
       // When saving content, sync title + last_edited_by to the linked record.
       // Uses dot-notation so only properties.title is merged; other properties untouched.
       // (created_at / created_by are never touched here — write-once semantics)
@@ -289,8 +295,22 @@ export default function PageEditor() {
       savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
       queryClient.invalidateQueries({ queryKey: ['pages'] });
     },
-    onError: () => {
+    onError: (error) => {
       setSaveStatus('idle');
+      if (error instanceof ConflictError) {
+        toast.error('This page was changed by someone else while you were editing.', {
+          description: 'Your last change was not saved. Load the latest version to continue.',
+          duration: 10000,
+          action: {
+            label: 'Load latest',
+            onClick: () => {
+              isDirtyRef.current = false;
+              queryClient.invalidateQueries();
+            },
+          },
+        });
+        return;
+      }
       toast.error('Failed to save changes. Please try again.');
     },
   });
@@ -300,7 +320,7 @@ export default function PageEditor() {
       setSaveStatus('saving');
       saveMutation.mutate(data);
     }, 800),
-    [pageId] // eslint-disable-line react-hooks/exhaustive-deps
+    [pageId]  
   );
 
   // Sync debouncedSave into a ref so stable callbacks can call it without capturing stale closure
@@ -684,7 +704,7 @@ export default function PageEditor() {
       }
     }
 
-    document.execCommand('insertHTML', false, chipHtml); // eslint-disable-line no-document-write
+    document.execCommand('insertHTML', false, chipHtml);
 
     setInlinePicker(null);
     inlinePickerRef.current = null;
