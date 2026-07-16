@@ -18,5 +18,14 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
       'Cross-Origin-Embedder-Policy': 'unsafe-none',
     },
+    // Forward AI-agent calls to the local agent server (server/index.js).
+    // The client always calls the relative path /api/agent, which nginx
+    // proxies the same way in production — so no per-environment URLs.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+      },
+    },
   },
 })

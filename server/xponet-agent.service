@@ -1,0 +1,27 @@
+# systemd unit for the Xponet agent server on the GCP VM.
+# Install:
+#   sudo cp server/xponet-agent.service /etc/systemd/system/
+#   (edit User / WorkingDirectory below to match your VM)
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now xponet-agent
+#   sudo systemctl status xponet-agent
+# Logs:  journalctl -u xponet-agent -f
+
+[Unit]
+Description=Xponet Workspace AI Agent (Node)
+After=network.target
+
+[Service]
+Type=simple
+User=exponentbizolution
+WorkingDirectory=/home/exponentbizolution/Xponet-V2/server
+# dotenv reads server/.env from WorkingDirectory; keep GEMINI_API_KEY there.
+ExecStart=/usr/bin/node index.js
+Restart=on-failure
+RestartSec=3
+# Optional hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

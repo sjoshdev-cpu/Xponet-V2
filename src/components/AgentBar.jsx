@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { httpsCallable } from 'firebase/functions';
 import { useQueryClient } from '@tanstack/react-query';
-import { functions } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,7 +9,31 @@ import { Sparkles, Send, Loader2, CornerDownLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-const workspaceAgent = httpsCallable(functions, 'workspaceAgent');
+/**
+ * Calls the standalone agent server (server/index.js) at /api/agent — proxied
+ * to localhost:8787 in dev by Vite, and to the VM-local process by nginx in
+ * production. The Firebase ID token authenticates the caller server-side.
+ */
+async function callAgent({ message, orgId }) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Please sign in again.');
+  const token = await user.getIdToken();
+
+  const res = await fetch('/api/agent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ message, orgId }),
+  });
+
+  let data = {};
+  try { data = await res.json(); } catch { /* non-JSON error body */ }
+  if (!res.ok) {
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
 
 const EXAMPLES = [
   'Create a bug tracker database with Status and Priority columns',
@@ -67,15 +90,12 @@ export default function AgentBar() {
     setTurns((t) => [...t, { role: 'user', text: message }]);
     setBusy(true);
     try {
-      const { data } = await workspaceAgent({ message, orgId: currentOrg.id });
+      const data = await callAgent({ message, orgId: currentOrg.id });
       setTurns((t) => [...t, { role: 'agent', text: data.reply || 'Done.' }]);
       // Refresh everything not already covered by realtime listeners.
       queryClient.invalidateQueries();
     } catch (err) {
-      const msg =
-        err?.code === 'functions/unauthenticated' ? 'Please sign in again.'
-        : err?.code === 'functions/permission-denied' ? "You're not a member of this workspace."
-        : err?.message || 'The assistant could not complete that request.';
+      const msg = err?.message || 'The assistant could not complete that request.';
       setTurns((t) => [...t, { role: 'agent', text: msg, error: true }]);
     } finally {
       setBusy(false);
