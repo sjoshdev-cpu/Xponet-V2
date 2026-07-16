@@ -8,6 +8,7 @@ import QuickAddTask from '@/components/tasks/QuickAddTask';
 import OfflineBanner from '@/components/OfflineBanner';
 import RetryIndicator from '@/components/RetryIndicator';
 import InvitePrompt from '@/components/InvitePrompt';
+import AgentBar from '@/components/AgentBar';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -134,6 +135,7 @@ export default function WorkspaceLayout() {
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} onNewTask={() => setQuickTaskOpen(true)} onNewPage={handleNewPage} />
       <QuickAddTask open={quickTaskOpen} onClose={() => setQuickTaskOpen(false)} />
+      <AgentBar />
     </div>
   );
 }

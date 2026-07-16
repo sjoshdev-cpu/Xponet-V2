@@ -2,6 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, browserLocalPersistence, setPersistence } from "firebase/auth";
 import { getFirestore, setLogLevel } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA7pRK0GeTT09PQ8Ui-nZYSoiqAqkB2Rpk",
@@ -19,4 +20,7 @@ setPersistence(auth, browserLocalPersistence);
 export const db = getFirestore(app, "xponet");
 setLogLevel("error");
 export const storage = getStorage(app);
+// Callable Cloud Functions (workspace AI agent). Default region us-central1 —
+// matches where firebase deploy puts the function unless you set a region.
+export const functions = getFunctions(app);
 export default app;
