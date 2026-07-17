@@ -362,6 +362,15 @@ export default function Sidebar({ onOpenSearch }) {
             <span>Command Center</span>
           </Link>
         )}
+        {canAccessCommandCenter(role) && (
+          <Link to="/dashboard/tasks" className={cn(
+            'flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors',
+            location.pathname === '/dashboard/tasks' ? 'bg-sidebar-accent font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent/60'
+          )}>
+            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+            <span>Task Dashboard</span>
+          </Link>
+        )}
         <Link to="/databases" className={cn(
           'flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors',
           location.pathname.startsWith('/database') ? 'bg-sidebar-accent font-medium' : 'text-sidebar-foreground hover:bg-sidebar-accent/60'

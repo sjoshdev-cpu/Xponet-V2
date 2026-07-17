@@ -1,3 +1,15 @@
+// Task categories — replaces the old separate Master_Tracker /
+// Trade_Task_Tracker spreadsheets with a single field on the Task itself, so
+// every dashboard number is a live query filtered by category (no cross-sheet
+// references, no #REF! failure mode). Tasks created before this field default
+// to 'General' at read time via taskCategory().
+export const TASK_CATEGORIES = ['General', 'Trade'];
+
+/** A task's category, defaulting legacy/untagged tasks to 'General'. */
+export function taskCategory(task) {
+  return task?.category === 'Trade' ? 'Trade' : 'General';
+}
+
 // Shared helpers for working with task assignees.
 //
 // Tasks now support multiple assignees via `assignees: [{ email, name }]`.

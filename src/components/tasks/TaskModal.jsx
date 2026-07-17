@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { parseNaturalDate, DATE_SHORTCUT_LABELS } from '@/utils/nlpDate';
 import { format } from 'date-fns';
-import { getAssignees, buildAssigneeFields, getInitials } from '@/lib/task-utils';
+import { getAssignees, buildAssigneeFields, getInitials, TASK_CATEGORIES } from '@/lib/task-utils';
 
 const STATUSES = ['Backlog', 'To Do', 'In Progress', 'In Review', 'Done'];
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
@@ -233,6 +233,20 @@ export default function TaskModal({ task, onSave, onClose, onDelete, currentUser
                 </SelectTrigger>
                 <SelectContent>
                   {EFFORTS.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5">Category</Label>
+              <Select value={form.category || 'General'} onValueChange={(v) => set('category', v)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TASK_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

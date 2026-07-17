@@ -10,6 +10,7 @@ import { Ticket, Task } from '@/api/firestoreClient';
 import { useQuery } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import PageHeader from '@/components/layout/PageHeader';
+import { KpiTile, QueueCard, CalloutBanner } from '@/components/dashboard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -53,53 +54,8 @@ function SevBadge({ severity }) {
   );
 }
 
-// ─── KPI Tile ─────────────────────────────────────────────────────────────────
-
-function KpiTile({ label, value, icon: Icon, trend, href, variant = 'default' }) {
-  const navigate = useNavigate();
-  const variantCls = {
-    default: 'bg-card border-border',
-    danger:  'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800',
-    warning: 'bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800',
-    success: 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800',
-  }[variant];
-  const iconCls = {
-    default: 'text-muted-foreground',
-    danger:  'text-red-600 dark:text-red-400',
-    warning: 'text-orange-600 dark:text-orange-400',
-    success: 'text-green-600 dark:text-green-400',
-  }[variant];
-  const valueCls = {
-    default: 'text-foreground',
-    danger:  'text-red-700 dark:text-red-300',
-    warning: 'text-orange-700 dark:text-orange-300',
-    success: 'text-green-700 dark:text-green-300',
-  }[variant];
-
-  return (
-    <button
-      onClick={() => href && navigate(href)}
-      className={cn(
-        'rounded-xl border p-5 text-left transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer w-full',
-        variantCls,
-        !href && 'cursor-default hover:translate-y-0 hover:shadow-none',
-      )}
-    >
-      <div className="flex items-start justify-between mb-3">
-        <div className={cn('p-2 rounded-lg bg-background/60', iconCls)}>
-          <Icon className="h-5 w-5" />
-        </div>
-        {trend !== undefined && (
-          <span className={cn('text-xs font-medium', trend > 0 ? 'text-red-600' : 'text-green-600')}>
-            {trend > 0 ? '+' : ''}{trend}%
-          </span>
-        )}
-      </div>
-      <div className={cn('text-3xl font-bold', valueCls)}>{value}</div>
-      <div className="text-sm text-muted-foreground mt-1">{label}</div>
-    </button>
-  );
-}
+// KpiTile, QueueCard, CalloutBanner now live in @/components/dashboard and are
+// imported above so every dashboard page shares them.
 
 // ─── Queue Row ────────────────────────────────────────────────────────────────
 
@@ -153,58 +109,6 @@ function TaskQueueRow({ task }) {
       )}>
         {task.priority}
       </span>
-    </div>
-  );
-}
-
-// ─── Section card ─────────────────────────────────────────────────────────────
-
-function QueueCard({ title, icon: Icon, iconCls, count, empty, children, viewHref }) {
-  const navigate = useNavigate();
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-        <div className="flex items-center gap-2">
-          <Icon className={cn('h-4 w-4', iconCls)} />
-          <span className="text-sm font-semibold">{title}</span>
-          {count > 0 && (
-            <span className="text-xs font-bold bg-foreground/10 px-1.5 py-0.5 rounded">{count}</span>
-          )}
-        </div>
-        {viewHref && (
-          <button
-            onClick={() => navigate(viewHref)}
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5 transition-colors"
-          >
-            View all <ChevronRight className="h-3 w-3" />
-          </button>
-        )}
-      </div>
-      <div className="flex-1 overflow-y-auto max-h-72">
-        {count === 0
-          ? <p className="text-sm text-muted-foreground text-center py-6">{empty}</p>
-          : children
-        }
-      </div>
-    </div>
-  );
-}
-
-// ─── Callout banner ───────────────────────────────────────────────────────────
-
-function CalloutBanner({ variant, icon: Icon, title, body }) {
-  const cls = {
-    danger:  'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300',
-    warning: 'bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300',
-    info:    'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300',
-  }[variant] || '';
-  return (
-    <div className={cn('flex items-start gap-3 p-4 rounded-xl border', cls)}>
-      <Icon className="h-5 w-5 shrink-0 mt-0.5" />
-      <div>
-        <p className="font-semibold text-sm">{title}</p>
-        {body && <p className="text-xs opacity-80 mt-0.5">{body}</p>}
-      </div>
     </div>
   );
 }

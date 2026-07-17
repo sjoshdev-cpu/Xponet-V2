@@ -37,6 +37,7 @@ const DocumentHub    = lazy(() => import('@/pages/DocumentHub'));
 const Tickets        = lazy(() => import('@/pages/Tickets'));
 const TicketDetail   = lazy(() => import('@/pages/TicketDetail'));
 const CommandCenter  = lazy(() => import('@/pages/CommandCenter'));
+const TaskDashboard  = lazy(() => import('@/pages/TaskDashboard'));
 
 const RouteFallback = () => (
   <div className="flex items-center justify-center h-full min-h-[40vh]">
@@ -90,6 +91,7 @@ const AuthenticatedApp = () => {
           <Route path="/tickets/:ticketId" element={<TicketDetail />} />
           <Route element={<RoleProtectedRoute check={canAccessCommandCenter} />}>
             <Route path="/command-center" element={<CommandCenter />} />
+            <Route path="/dashboard/tasks" element={<TaskDashboard />} />
           </Route>
           <Route path="/databases" element={<Databases />} />
           <Route path="/database/:dbId" element={<DatabaseDetail />} />

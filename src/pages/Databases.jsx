@@ -120,7 +120,26 @@ const DB_PRESETS = [
       { id: "files",  label: "Files",  type: "files"  },
     ],
   },
+  {
+    id: "dept_dashboard",
+    label: "Department Dashboard",
+    description: "Track a department's work items with owner, status & dates",
+    icon: "📊",
+    color: "from-teal-900/60 to-teal-800/40",
+    columns: [
+      { id: "title",     label: "Item",       type: "text",   fixed: true },
+      { id: "owner",     label: "Owner",      type: "person" },
+      { id: "status",    label: "Status",     type: "status" },
+      { id: "priority",  label: "Priority",   type: "select", options: ["Low", "Medium", "High", "Urgent"] },
+      { id: "due_date",  label: "Due date",   type: "date"   },
+      { id: "notes",     label: "Notes",      type: "text"   },
+    ],
+  },
 ];
+
+// The "Empty database" preset, used as the fallback schema when a database
+// page has no saved columns. Looked up by id so it survives preset reordering.
+const EMPTY_PRESET = DB_PRESETS.find((p) => p.id === "custom");
 
 // ─────────────────────────────────────────────────────────────
 // CSV utilities
@@ -538,10 +557,10 @@ export default function Databases() {
     setActivePage(page);
     try {
       const parsed = JSON.parse(page.content || "{}");
-      setColumns(parsed.columns?.length ? parsed.columns : DB_PRESETS[4].columns);
+      setColumns(parsed.columns?.length ? parsed.columns : EMPTY_PRESET.columns);
       setRows(parsed.rows || []);
     } catch {
-      setColumns(DB_PRESETS[4].columns);
+      setColumns(EMPTY_PRESET.columns);
       setRows([]);
     }
     setHidden(new Set());
@@ -551,7 +570,7 @@ export default function Databases() {
 
   // ── Create database ─────────────────────────────────────────
   const createDb = async (name, preset) => {
-    const cols = preset?.columns || DB_PRESETS[4].columns;
+    const cols = preset?.columns || EMPTY_PRESET.columns;
     const newPage = await Page.create({
       org_id: currentOrg.id,
       title: name,
