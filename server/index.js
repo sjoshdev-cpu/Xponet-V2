@@ -39,9 +39,12 @@ const {
   ALLOWED_ORIGIN,
 } = process.env;
 
+// Note: we DON'T exit when GEMINI_API_KEY is missing. Exiting leaves the port
+// closed, which the Vite/nginx proxy surfaces as an opaque 502 Bad Gateway.
+// Instead the server stays up, the health check works, and the /api/agent
+// endpoint returns a clear "not configured" error you can actually act on.
 if (!GEMINI_API_KEY) {
-  console.error('✗ GEMINI_API_KEY is not set. Copy server/.env.example to server/.env and fill it in.');
-  process.exit(1);
+  console.warn('⚠ GEMINI_API_KEY is not set — /api/agent will return a config error until you set it in server/.env.');
 }
 
 // ── Firebase Admin init ────────────────────────────────────────────────────
@@ -79,7 +82,16 @@ async function requireAuth(req, res, next) {
   }
 }
 
-app.post('/api/agent', requireAuth, async (req, res) => {
+// Config guard runs before auth so a missing key gives a clear message no
+// matter the token/credential state — the common "why won't the chat work".
+function requireConfig(_req, res, next) {
+  if (!GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'Assistant is not configured: set GEMINI_API_KEY in server/.env and restart the agent server.' });
+  }
+  next();
+}
+
+app.post('/api/agent', requireConfig, requireAuth, async (req, res) => {
   const { message, orgId } = req.body || {};
   if (!message || !orgId) return res.status(400).json({ error: 'message and orgId are required.' });
 

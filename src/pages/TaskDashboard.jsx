@@ -178,9 +178,33 @@ export default function TaskDashboard() {
                 empty="No pending tasks"
               >
                 {(s.ownerSnapshot || []).map((o) => (
-                  <div key={o.name} className="flex items-center justify-between px-4 py-2.5 border-b border-border/50 last:border-0">
-                    <span className="text-sm truncate">{o.name}</span>
-                    <span className="text-sm font-semibold tabular-nums">{o.count}</span>
+                  <div key={o.name} className="border-b border-border/50 last:border-0">
+                    {/* Owner header: name + how many pending tasks they have */}
+                    <div className="flex items-center justify-between px-4 py-2 bg-muted/20">
+                      <span className="text-sm font-medium truncate">{o.name}</span>
+                      <span className="text-xs font-semibold tabular-nums bg-foreground/10 px-1.5 py-0.5 rounded shrink-0">
+                        {o.count} pending
+                      </span>
+                    </div>
+                    {/* Their actual pending tasks */}
+                    <ul>
+                      {o.tasks.map((t) => (
+                        <li
+                          key={t.id}
+                          className="flex items-center gap-2 px-4 py-1.5 text-sm border-t border-border/30"
+                        >
+                          <span className={cn('flex-1 truncate', isOverdue(t) && 'text-red-600 dark:text-red-400')}>
+                            {t.title}
+                          </span>
+                          <span className={cn('text-[11px] font-semibold px-1.5 py-0.5 rounded-full shrink-0', STATUS_BADGE[t.status])}>
+                            {t.status || '—'}
+                          </span>
+                          {t.due_date && (
+                            <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{t.due_date}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 ))}
               </QueueCard>

@@ -30,6 +30,23 @@ export function byOwnerDesc(tasks) {
 }
 
 /**
+ * Like byOwnerDesc but keeps each owner's actual tasks, so the Owner Snapshot
+ * can list the pending items alongside the per-owner count.
+ * → [{ name, count, tasks: [...] }] sorted desc by count.
+ */
+export function byOwnerDetailed(tasks) {
+  const map = new Map();
+  for (const t of tasks) {
+    const { key, name } = ownerOf(t);
+    const cur = map.get(key) || { name, count: 0, tasks: [] };
+    cur.count += 1;
+    cur.tasks.push(t);
+    map.set(key, cur);
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
+/**
  * computeTaskDashboardStats(tasks, now?) — all dashboard figures.
  * `now` is injectable for deterministic tests.
  */
@@ -60,7 +77,7 @@ export function computeTaskDashboardStats(tasks, now = new Date()) {
     topCloser: byOwnerDesc(doneThisWeek)[0] || null,
     generalTasks: general,
     tradeTasks: trade,
-    ownerSnapshot: byOwnerDesc(pending(withCat)),
+    ownerSnapshot: byOwnerDetailed(pending(withCat)),
     quick: {
       generalPending: pending(general).length,
       tradePending: pending(trade).length,

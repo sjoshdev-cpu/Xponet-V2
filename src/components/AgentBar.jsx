@@ -19,11 +19,23 @@ async function callAgent({ message, orgId }) {
   if (!user) throw new Error('Please sign in again.');
   const token = await user.getIdToken();
 
-  const res = await fetch('/api/agent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ message, orgId }),
-  });
+  let res;
+  try {
+    res = await fetch('/api/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ message, orgId }),
+    });
+  } catch {
+    // fetch itself rejected — network down, or nothing serving /api at all
+    throw new Error("Couldn't reach the assistant server. Is it running? (cd server && npm run dev)");
+  }
+
+  // 502/503/504 from the dev/nginx proxy means the agent server is down or
+  // not reachable — the response body is proxy HTML, not our JSON.
+  if (res.status === 502 || res.status === 504) {
+    throw new Error("The assistant server isn't reachable. Start it with: cd server && npm run dev (see server/README.md).");
+  }
 
   let data = {};
   try { data = await res.json(); } catch { /* non-JSON error body */ }
