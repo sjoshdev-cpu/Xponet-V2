@@ -5,7 +5,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Send, Loader2, CornerDownLeft } from 'lucide-react';
+import { Sparkles, Send, Loader2, CornerDownLeft, FileText, CheckSquare, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -47,11 +47,54 @@ async function callAgent({ message, orgId }) {
   return data;
 }
 
-const EXAMPLES = [
-  'Create a bug tracker database with Status and Priority columns',
-  'Add a task to fix the login redirect, high priority, due next Friday',
-  'Make a page called Onboarding Checklist',
-  'Add a CRM record for Acme Corp',
+// Shown in the empty transcript — an overview of what the agent can build,
+// mirroring the three object types its tools can create (see server/agent-core.js).
+const CAPABILITIES = [
+  {
+    icon: FileText,
+    title: 'Document & Note Taking (Pages)',
+    items: [
+      { label: 'Create Pages', body: 'Write documents, meeting notes, project wikis, or personal logs.' },
+      { label: 'Organize Content', body: 'Nest pages within pages to build structured knowledge bases.' },
+    ],
+  },
+  {
+    icon: CheckSquare,
+    title: 'Task Tracking (Task Board)',
+    items: [
+      {
+        label: 'Create Tasks',
+        body: (
+          <>
+            Track your to-dos with attributes like <strong className="font-medium text-foreground">Status</strong>{' '}
+            (Backlog, To Do, In Progress, In Review, Done),{' '}
+            <strong className="font-medium text-foreground">Priority</strong> (Low, Medium, High, Urgent),{' '}
+            <strong className="font-medium text-foreground">Effort</strong> (XS to XL),{' '}
+            <strong className="font-medium text-foreground">Due Dates</strong>, and{' '}
+            <strong className="font-medium text-foreground">Assignees</strong>.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    icon: Database,
+    title: 'Structured Data (Databases)',
+    items: [
+      {
+        label: 'Create Custom Databases',
+        body: 'Build trackers for anything (e.g., CRM, Bug Trackers, Inventory, Content Calendars, or Resource Libraries).',
+      },
+      {
+        label: 'Define Schemas',
+        body: 'Add custom columns/properties including text, numbers, dates, checkboxes, and single/multi-select dropdowns.',
+      },
+      {
+        label: 'Add Records',
+        body: 'Create and manage individual entries (rows) within any database, each of which can have its own dedicated page content.',
+      },
+    ],
+  },
 ];
 
 /**
@@ -140,21 +183,27 @@ export default function AgentBar() {
           {/* Transcript */}
           <div ref={scrollRef} className="max-h-[45vh] overflow-y-auto px-4 py-3 space-y-3">
             {turns.length === 0 && (
-              <div className="py-2">
-                <p className="text-sm text-muted-foreground mb-2.5">
-                  Describe what you want and I'll build it in this workspace. Try:
+              <div className="py-1 space-y-4">
+                {CAPABILITIES.map(({ icon: Icon, title, items }) => (
+                  <section key={title}>
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Icon className="h-4 w-4 shrink-0 text-primary" />
+                      {title}
+                    </h3>
+                    <ul className="mt-1.5 space-y-1 pl-6">
+                      {items.map(({ label, body }) => (
+                        <li key={label} className="relative text-sm leading-relaxed text-muted-foreground">
+                          <span className="absolute -left-3.5 top-2 h-1 w-1 rounded-full bg-muted-foreground/50" />
+                          <strong className="font-medium text-foreground">{label}:</strong> {body}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+                <p className="border-t border-border pt-3 text-sm italic leading-relaxed text-muted-foreground">
+                  If you'd like me to set up a new page, build a database, or create a task list for you, just let me
+                  know what you're working on!
                 </p>
-                <div className="flex flex-col gap-1.5">
-                  {EXAMPLES.map((ex) => (
-                    <button
-                      key={ex}
-                      onClick={() => send(ex)}
-                      className="text-left text-sm px-3 py-2 rounded-lg border border-border hover:bg-accent/50 transition-colors"
-                    >
-                      {ex}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
 
