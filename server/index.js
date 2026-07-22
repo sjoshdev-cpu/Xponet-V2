@@ -17,7 +17,7 @@
  *   SERVICE_ACCOUNT_PATH      path to the Firebase service-account JSON
  *                             (default ./serviceAccountKey.json)
  *   FIRESTORE_DATABASE_ID     Firestore database id (default 'xponet')
- *   AGENT_MODEL               'gemini-2.5-flash' (default) | 'gemini-2.5-flash-lite'
+ *   AGENT_MODEL               'gemini-3.5-flash' (default) | 'gemini-flash-lite-latest'
  *   PORT                      default 8787
  *   ALLOWED_ORIGIN            CORS origin allowlist (default: reflect request)
  */
@@ -34,7 +34,7 @@ const {
   GEMINI_API_KEY,
   SERVICE_ACCOUNT_PATH = './serviceAccountKey.json',
   FIRESTORE_DATABASE_ID = 'xponet',
-  AGENT_MODEL = 'gemini-2.5-flash',
+  AGENT_MODEL = 'gemini-3.5-flash',
   PORT = 8787,
   ALLOWED_ORIGIN,
 } = process.env;

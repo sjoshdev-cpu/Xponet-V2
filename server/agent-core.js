@@ -355,7 +355,7 @@ const SYSTEM_INSTRUCTION =
 /**
  * runAgent({ db, apiKey, model, message, ctx }) -> { reply, actions }
  */
-async function runAgent({ db, apiKey, model = 'gemini-2.5-flash', message, ctx }) {
+async function runAgent({ db, apiKey, model = 'gemini-3.5-flash', message, ctx }) {
   const genAI = new GoogleGenerativeAI(apiKey);
   const handlers = makeHandlers(db);
   const gemini = genAI.getGenerativeModel({

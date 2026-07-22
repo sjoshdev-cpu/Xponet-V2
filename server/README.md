@@ -90,7 +90,7 @@ npm install --omit=dev && sudo systemctl restart xponet-agent`.
 | `GEMINI_API_KEY` | — | **Required.** |
 | `SERVICE_ACCOUNT_PATH` | `./serviceAccountKey.json` | Or use Application Default Credentials (GCE metadata) by pointing this at a missing file. |
 | `FIRESTORE_DATABASE_ID` | `xponet` | The app's named database. |
-| `AGENT_MODEL` | `gemini-2.5-flash` | Or `gemini-2.5-flash-lite`. |
+| `AGENT_MODEL` | `gemini-3.5-flash` | Or `gemini-flash-lite-latest`. `gemini-2.5-*` is retired for new projects. |
 | `PORT` | `8787` | Must match the Vite/nginx proxy target. |
 | `ALLOWED_ORIGIN` | reflect request | Only matters for direct cross-origin calls; behind a proxy it's same-origin. |
 
