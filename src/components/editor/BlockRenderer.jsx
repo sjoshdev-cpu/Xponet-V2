@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { GripVertical, ChevronRight, ChevronDown, Trash2, Copy, ArrowUp, ArrowDown, Type, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CALLOUT_COLORS } from '@/lib/design-system';
@@ -7,12 +7,17 @@ import {
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent
 } from '@/components/ui/dropdown-menu';
 import LinkedDatabaseBlockImport from '@/components/database/LinkedDatabaseBlock.jsx';
-import InlineDatabaseEmbedImport from '@/components/database/InlineDatabaseEmbed.jsx';
 import TableBlock from '@/components/editor/TableBlock.jsx';
 
 // Avoid circular import issues — alias for use in renderBlock()
 const _LinkedDatabaseBlock   = LinkedDatabaseBlockImport;
-const _InlineDatabaseEmbed   = InlineDatabaseEmbedImport;
+
+// InlineDatabaseEmbed pulls in RecordModal, which renders block bodies via
+// BlockRenderer itself — a genuine 3-file mutual dependency (pages embed
+// databases; database rows have block-based bodies). Lazy-loading this one
+// edge keeps it out of the synchronous module graph instead of just aliasing
+// the import, which never actually broke the cycle.
+const InlineDatabaseEmbed = lazy(() => import('@/components/database/InlineDatabaseEmbed.jsx'));
 
 const HEADING_TYPES = ['heading1', 'heading2', 'heading3'];
 
@@ -484,14 +489,15 @@ export default function BlockRenderer({
         );
       }
       case 'database-embed': {
-        const InlineDatabaseEmbed = _InlineDatabaseEmbed;
         return (
-          <InlineDatabaseEmbed
-            block={block}
-            onChange={(updates) => onChange({ ...block, ...updates })}
-            onFocusNext={onAddAfter}
-            onFocusPrevious={onAddBefore}
-          />
+          <Suspense fallback={<div className="h-24 rounded-xl border border-border my-2 animate-pulse bg-muted/20" />}>
+            <InlineDatabaseEmbed
+              block={block}
+              onChange={(updates) => onChange({ ...block, ...updates })}
+              onFocusNext={onAddAfter}
+              onFocusPrevious={onAddBefore}
+            />
+          </Suspense>
         );
       }
       default:
