@@ -295,7 +295,8 @@ export default function Sidebar({ onOpenSearch }) {
 
   if (!sidebarOpen) {
     return (
-      <div className="fixed top-3 left-3 z-30">
+      <div className="fixed top-3 left-3 z-30 flex items-center gap-2">
+        <img src="/logo-mark.png" alt="Exponent Bizolution" className="h-8 w-8 rounded-md shadow-sm" />
         <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} className="h-8 w-8 bg-background/80 backdrop-blur border shadow-sm">
           <ChevronsLeft className="h-4 w-4 rotate-180" />
         </Button>
@@ -306,11 +307,14 @@ export default function Sidebar({ onOpenSearch }) {
   return (
     <aside className="w-[240px] h-screen flex flex-col bg-sidebar border-r border-sidebar-border shrink-0 select-none">
       {/* Workspace header — switcher lists workspaces, invites, and accounts */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-sidebar-border">
-        <WorkspaceSwitcher />
-        <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0">
-          <ChevronsLeft className="h-4 w-4" />
-        </Button>
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-sidebar-border">
+        <img src="/logo-mark.png" alt="Exponent Bizolution" className="h-6 w-6 rounded-md shrink-0" />
+        <div className="flex items-center justify-between flex-1 min-w-0">
+          <WorkspaceSwitcher />
+          <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0">
+            <ChevronsLeft className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Navigation */}
