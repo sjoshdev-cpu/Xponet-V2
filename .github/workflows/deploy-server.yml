@@ -1,0 +1,49 @@
+name: Deploy agent server to production VM
+
+# Deploys server/ to the GCP VM and restarts the systemd service, on every
+# push to main that touches server/ — mirrors deploy.yml's frontend pipeline.
+# Reuses the same one-time setup (repo secret DEPLOY_SSH_KEY, passwordless
+# sudo for the deploy user) since it targets the same VM.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/deploy-server.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: production-deploy-server
+  cancel-in-progress: true
+
+env:
+  VM_HOST: "35.232.106.86"
+  VM_USER: "exponentbizolution"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull, install, restart, verify
+        run: |
+          ssh "$VM_USER@$VM_HOST" '
+            set -e
+            cd ~/Xponet-V2
+            git pull --ff-only
+            cd server
+            npm install --omit=dev --no-audit --no-fund
+            sudo systemctl restart xponet-agent
+            sleep 2
+            sudo systemctl is-active --quiet xponet-agent
+            curl -sf http://127.0.0.1:8787/api/agent/health
+            echo
+            echo "Agent server deployed $(date -u +%FT%TZ)"
+          '

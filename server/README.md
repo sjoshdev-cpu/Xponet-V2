@@ -102,9 +102,9 @@ npm install --omit=dev && sudo systemctl restart xponet-agent`.
   it rejects any `orgId` the caller isn't a member of. Any new tool inherits
   that responsibility.
 - **Shared logic:** `agent-core.js` holds the tool definitions + handlers. The
-  Blaze-plan Cloud Function alternative (`../functions/agent.js`) duplicates
-  this deliberately; if you change tool behavior, update both, or delete
-  `functions/` since you're on the VM path.
+  Blaze-plan Cloud Function alternative that used to live at `functions/agent.js`
+  was removed — it required a paid plan this project doesn't use, and had
+  already drifted out of sync with this file. This is the only implementation.
 - **GCE credentials shortcut:** if the VM's service account already has
   Firestore access, you can skip the JSON key file — leave
   `serviceAccountKey.json` absent and the server falls back to Application
